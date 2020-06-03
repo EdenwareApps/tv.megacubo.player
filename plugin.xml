@@ -1,0 +1,24 @@
+<?xml version='1.0' encoding='utf-8'?>
+  <plugin 
+    xmlns="http://apache.org/cordova/ns/plugins/1.0" 
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    id="cordova-megacubo-player-plugin" 
+    version="0.0.1">
+
+    <name>cordova-megacubo-player-plugin</name>
+    <js-module name="cordova-megacubo-player-plugin" src="www/cordova-megacubo-player-plugin.js">
+      <clobbers target="megacuboNativePlayer" />
+    </js-module>
+
+    <platform name="android">
+      <framework src="src/android/megacubo.gradle" custom="true" type="gradleReference" />
+
+      <config-file parent="/*" target="res/xml/config.xml">
+        <feature name="cordova-megacubo-player-plugin">
+          <param name="android-package" value="com.megacubo.cordova.MegacuboPlayerPlugin" />
+        </feature>
+      </config-file>
+    
+      <source-file src="src/android/MegacuboPlayerPlugin.java" target-dir="src/com/megacubo/cordova/" />
+    </platform>
+  </plugin>
