@@ -19,8 +19,10 @@ import android.widget.FrameLayout;
 
 import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.Player;
+import com.google.android.exoplayer2.Timeline;
 import com.google.android.exoplayer2.util.Util;
 import com.google.android.exoplayer2.SeekParameters;
+import com.google.android.exoplayer2.Timeline.Window;
 import com.google.android.exoplayer2.ExoPlayerFactory;
 import com.google.android.exoplayer2.SimpleExoPlayer;
 import com.google.android.exoplayer2.ExoPlaybackException;
@@ -55,6 +57,7 @@ import org.json.JSONObject;
 
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.util.Locale;
 import java.util.HashMap;
 
 public class MegacuboPlayerPlugin extends CordovaPlugin {
@@ -90,6 +93,8 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     private int videoForcedHeight = 720;
     private float videoForcedRatio = 1.7777777777777777f; // 16 / 9
 
+    private Timeline.Period period = new Timeline.Period();
+
     @Override
     public void initialize(CordovaInterface cordova, CordovaWebView webView) {
         super.initialize(cordova, webView);
@@ -100,6 +105,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
             context = this.cordova.getActivity().getApplicationContext();
             playerContainer = new FrameLayout(cordova.getActivity());
 
+
             mainHandler = new Handler();
             handler = new Handler();
             timer = new Runnable() {
@@ -108,7 +114,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                     cordova.getActivity().runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
-                            sendEvent("time", "{\"currentTime\":" + (player.getCurrentPosition() / 1000) + ",\"duration\":" + (player.getDuration() / 1000) + "}");
+                            GetTimeData();
                             if(isPlaying){
                                 handler.postDelayed(timer, 1000);
                             }
@@ -248,7 +254,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                 @Override
                 public void run() {
                     try {
-                        player.seekTo(args.getInt(0) * 1000);
+                        Seek(args.getInt(0) * 1000);
                     } catch (JSONException e) {
                         throw new RuntimeException(e);
                     }  
@@ -327,6 +333,65 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
             return true;
         }
         return false;
+    }
+
+    public void Seek(long to){ // TODO, on live streams, we're unable to seek back too much, why?!
+        boolean debug = false;
+        Timeline timeline = player.getCurrentTimeline();
+        int currentWindowIndex = player.getCurrentWindowIndex();
+        long offset = player.getCurrentPosition();
+        long position;
+        long currentPosition = player.getCurrentPosition();
+        Window tmpWindow = new Window();
+        if (timeline != null) {
+            offset = (timeline.getPeriod(player.getCurrentPeriodIndex(), period).getPositionInWindowMs() * -1);
+            position = offset + currentPosition;
+
+            if(debug){
+                Log.d("MegacuboPlayer", "SEEK DEBUG " + to + " :: " + offset);
+            }
+
+            if(to < offset){
+                to = 0; // zero after offset
+            } else {
+                to = to - offset;
+            }
+
+            if(debug){
+                Log.d("MegacuboPlayer", "SEEKTO " + to + " " + currentPosition);
+            }
+
+            player.seekTo(to);
+
+            if(debug){
+                Log.d("MegacuboPlayer", "SEEKED " + to + " " + player.getCurrentPosition());
+            }
+
+            GetTimeData();
+        }
+    }
+
+    public void GetTimeData(){
+        Timeline timeline = player.getCurrentTimeline();
+        long currentPosition = player.getCurrentPosition();
+        long position = 0;
+        long duration = 0;
+        long offset = 0;
+        Window tmpWindow = new Window();
+        
+        if (!timeline.isEmpty()) {
+            offset = (timeline.getPeriod(player.getCurrentPeriodIndex(), period).getPositionInWindowMs() * -1);
+
+            position = offset + currentPosition;
+
+            if(player.isCurrentWindowLive()){
+                duration = offset + currentPosition + player.getTotalBufferedDuration();
+            } else {
+                duration = offset + player.getDuration();
+            }
+
+            sendEvent("time", "{\"currentTime\":" + position + ",\"duration\":" + duration + "}");
+        }
     }
 
     public void ApplyAspectRatio(float ratio){

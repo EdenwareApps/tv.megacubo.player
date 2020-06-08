@@ -63,11 +63,7 @@ function MegacuboPlayer() {
     self.seek = function(to, success, error) {
         console.warn("RATIO", to)
         clearTimeout(self.seekTimer)
-        self.currentTime = self.seeking = to
         exec(success, error, "cordova-megacubo-player-plugin", "seek", [to])
-        self.seekTimer = setTimeout(() => {
-            self.seeking = false            
-        }, 2000)
         self.emit('timeupdate')
     }
 
@@ -86,26 +82,24 @@ function MegacuboPlayer() {
     self.init = () => {
         self.seekTimer = 0
         self.events = {}
-        self.seeking = false
         self.on('ratio', e => {
             self.aspectRatio = e.ratio
             self.videoWidth = e.width
             self.videoHeight = e.height
         })
         self.on('time', e => {
-            if(!self.seeking){
-                console.warn('EXVENT', e)
-                if(e.duration < e.currentTime){
-                    e.duration = e.currentTime
-                }
-                if(e.currentTime != self.currentTime){
-                    self.currentTime = e.currentTime
-                    self.emit('timeupdate')
-                }
-                if(e.duration != self.duration){
-                    self.duration = e.duration
-                    self.emit('durationchange')
-                }
+            e.currentTime = e.currentTime / 1000;
+            e.duration = e.duration / 1000;
+            if(e.duration < e.currentTime){
+                e.duration = e.currentTime + 1;
+            }
+            if(e.currentTime > 0 && e.currentTime != self.currentTime){
+                self.currentTime = e.currentTime
+                self.emit('timeupdate')
+            }
+            if(e.duration != self.duration){
+                self.duration = e.duration
+                self.emit('durationchange')
             }
         })
     }
