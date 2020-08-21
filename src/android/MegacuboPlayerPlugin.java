@@ -526,7 +526,9 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
             PluginResult pluginResult = new PluginResult(PluginResult.Status.OK, json);
             pluginResult.setKeepCallback(true);
             eventsTrackingContext.sendPluginResult(pluginResult);
+            /*
             Log.d("MegacuboPlayer", "sent callback");
+            */
         }
     }
 }
