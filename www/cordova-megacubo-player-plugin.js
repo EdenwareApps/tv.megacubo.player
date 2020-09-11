@@ -107,4 +107,10 @@ function MegacuboPlayer() {
     self.init()
 }
 
-module.exports = new MegacuboPlayer()
+cordova.addConstructor(function (){
+	if (!window.plugins) {
+		window.plugins = {};
+	}
+	window.plugins.megacubo = new MegacuboPlayer()
+    return window.plugins.megacubo;
+})
