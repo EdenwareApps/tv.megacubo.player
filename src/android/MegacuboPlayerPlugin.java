@@ -421,7 +421,6 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
         mainCallbackContext = callbackContext;
 
         initMegacuboPlayer();
-        isActive = true;
 
         // player!!.audioAttributes = AudioAttributes.Builder().setFlags(C.FLAG_AUDIBILITY_ENFORCED).setUsage(C.USAGE_NOTIFICATION_RINGTONE).setContentType(C.CONTENT_TYPE_SPEECH).build()
 
@@ -436,6 +435,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 
     private void initMegacuboPlayer() {
         if(!isActive){
+            isActive = true;
             if(player == null){
                 webView.getView().setBackgroundColor(android.R.color.transparent);
                 playerView = new PlayerView(context); 
@@ -476,9 +476,9 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     }
 
     private void MCRatio(float ratio){        
-        if(isActive){
+        // if(isActive){
             ApplyAspectRatio(ratio);
-        }
+        //}
     }
 
     private void MCVolume(float volume){
@@ -532,6 +532,8 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
         } else {
             Log.d(TAG, "view not found - container not removed");
         }
+        player.release();
+        player = null;
     }
 
 	@Override
