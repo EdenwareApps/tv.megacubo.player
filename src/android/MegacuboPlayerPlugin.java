@@ -88,6 +88,8 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     private static final int BUFFER_SEGMENT_SIZE = 64 * 1024;
     private static final int BUFFER_SEGMENT_COUNT = 256;
 
+    private String currentPlayerState = "";
+    private boolean sendEventEnabled = true;
     private int videoWidth = 1280;
     private int videoHeight = 720;
     private int videoForcedWidth = 1280;
@@ -152,6 +154,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                             state = "paused";
                         }
                     }
+                    currentPlayerState = state;
                     sendEvent("state", state);
                 }
 
@@ -168,46 +171,61 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 
                 @Override
                 public void onPlayerError(ExoPlaybackException error) {
-                    final String what;
-                    switch (error.type) {
-                    case ExoPlaybackException.TYPE_SOURCE:
-                        what = error.getSourceException().getMessage();
-                        break;
-                    case ExoPlaybackException.TYPE_RENDERER:
-                        what = error.getRendererException().getMessage();
-                        break;
-                    case ExoPlaybackException.TYPE_UNEXPECTED:
-                        what = error.getUnexpectedException().getMessage();
-                        break;
-                    default:
-                        what = "Unknown: " + error;
-                    }
-                    /*
-                    
-        if (e.type == ExoPlaybackException.TYPE_RENDERER) {
-            Exception cause = e.getRendererException();
-            if (cause instanceof MediaCodecRenderer.DecoderInitializationException) {
-                // Special case for decoder initialization failures.
-                MediaCodecRenderer.DecoderInitializationException decoderInitializationException =
-                        (MediaCodecRenderer.DecoderInitializationException) cause;
-                if (decoderInitializationException.decoderName == null) {
-                    if (decoderInitializationException.getCause() instanceof MediaCodecUtil.DecoderQueryException) {
-                        errorString = getResources().getString(R.string.error_querying_decoders);
-                    } else if (decoderInitializationException.secureDecoderRequired) {
-                        errorString = getResources().getString(R.string.error_no_secure_decoder,
-                                decoderInitializationException.mimeType);
+                    String what;
+                    String errStr = error.toString();
+                    Log.e(TAG, "onPlayerError " + errStr + ", " + errStr.indexOf("PlaylistStuckException"));
+                    if(errStr.indexOf("PlaylistStuckException") != -1){
+                        sendEvent("state", "loading");
+                        sendEventEnabled = false;
+                        player.retry();
+                        player.setPlayWhenReady(true);
+                        setTimeout(() -> {
+                            sendEventEnabled = true;
+                            if(currentPlayerState != "loading"){
+                                sendEvent("state", currentPlayerState);
+                            }
+                        }, 100);
                     } else {
-                        errorString = getResources().getString(R.string.error_no_decoder,
-                                decoderInitializationException.mimeType);
+                        switch (error.type) {
+                        case ExoPlaybackException.TYPE_SOURCE:
+                            what = "TYPE_SOURCE: " + error.getSourceException().getMessage();
+                            break;
+                        case ExoPlaybackException.TYPE_RENDERER:
+                            what = "TYPE_RENDERER: " + error.getRendererException().getMessage();
+                            break;
+                        case ExoPlaybackException.TYPE_UNEXPECTED:
+                            what = "TYPE_UNEXPECTED: " + error.getUnexpectedException().getMessage();
+                            break;
+                        default:
+                            what = "Unknown: " + error;
+                        }
+                        /*
+                        
+            if (e.type == ExoPlaybackException.TYPE_RENDERER) {
+                Exception cause = e.getRendererException();
+                if (cause instanceof MediaCodecRenderer.DecoderInitializationException) {
+                    // Special case for decoder initialization failures.
+                    MediaCodecRenderer.DecoderInitializationException decoderInitializationException =
+                            (MediaCodecRenderer.DecoderInitializationException) cause;
+                    if (decoderInitializationException.decoderName == null) {
+                        if (decoderInitializationException.getCause() instanceof MediaCodecUtil.DecoderQueryException) {
+                            errorString = getResources().getString(R.string.error_querying_decoders);
+                        } else if (decoderInitializationException.secureDecoderRequired) {
+                            errorString = getResources().getString(R.string.error_no_secure_decoder,
+                                    decoderInitializationException.mimeType);
+                        } else {
+                            errorString = getResources().getString(R.string.error_no_decoder,
+                                    decoderInitializationException.mimeType);
+                        }
+                    } else {
+                        errorString = getResources().getString(R.string.error_instantiating_decoder,
+                                decoderInitializationException.decoderName);
                     }
-                } else {
-                    errorString = getResources().getString(R.string.error_instantiating_decoder,
-                            decoderInitializationException.decoderName);
                 }
             }
-        }
-                    */
-                    sendEvent("error", "ExoPlayer error " + what);
+                        */
+                        sendEvent("error", "ExoPlayer error " + what);
+                    }
                 }
             };
             
@@ -458,7 +476,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     }
 
     public void sendEvent(String type, String data){
-        if(isActive && eventsTrackingContext != null) {
+        if(sendEventEnabled && isActive && eventsTrackingContext != null) {
             JSONObject json = new JSONObject();
             try {
                 json.put("type", type);
@@ -534,6 +552,18 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
         }
         player.release();
         player = null;
+    }
+    
+    public static void setTimeout(Runnable runnable, int delay){
+        new Thread(() -> {
+            try {
+                Thread.sleep(delay);
+                runnable.run();
+            }
+            catch (Exception e){
+                System.err.println(e);
+            }
+        }).start();
     }
 
 	@Override
