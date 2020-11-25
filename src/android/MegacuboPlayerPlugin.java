@@ -187,17 +187,17 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                         }, 100);
                     } else {
                         switch (error.type) {
-                        case ExoPlaybackException.TYPE_SOURCE:
-                            what = "TYPE_SOURCE: " + error.getSourceException().getMessage();
-                            break;
-                        case ExoPlaybackException.TYPE_RENDERER:
-                            what = "TYPE_RENDERER: " + error.getRendererException().getMessage();
-                            break;
-                        case ExoPlaybackException.TYPE_UNEXPECTED:
-                            what = "TYPE_UNEXPECTED: " + error.getUnexpectedException().getMessage();
-                            break;
-                        default:
-                            what = "Unknown: " + error;
+                            case ExoPlaybackException.TYPE_SOURCE:
+                                what = "TYPE_SOURCE: " + error.getSourceException().getMessage();
+                                break;
+                            case ExoPlaybackException.TYPE_RENDERER:
+                                what = "TYPE_RENDERER: " + error.getRendererException().getMessage();
+                                break;
+                            case ExoPlaybackException.TYPE_UNEXPECTED:
+                                what = "TYPE_UNEXPECTED: " + error.getUnexpectedException().getMessage();
+                                break;
+                            default:
+                                what = "Unknown: " + error;
                         }
                         /*
                         
@@ -225,6 +225,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
             }
                         */
                         sendEvent("error", "ExoPlayer error " + what);
+                        MCStop();
                     }
                 }
             };
@@ -301,7 +302,6 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
             long offset = player.getCurrentPosition();
             long position;
             long currentPosition = player.getCurrentPosition();
-            Window tmpWindow = new Window();
             if (timeline != null) {
                 offset = (timeline.getPeriod(player.getCurrentPeriodIndex(), period).getPositionInWindowMs() * -1);
                 position = offset + currentPosition;
@@ -338,7 +338,6 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
             long position = 0;
             long duration = 0;
             long offset = 0;
-            Window tmpWindow = new Window();
             
             if (!timeline.isEmpty()) {
                 offset = (timeline.getPeriod(player.getCurrentPeriodIndex(), period).getPositionInWindowMs() * -1);
@@ -538,9 +537,8 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     }
 
 	private void MCStop() {
-		Log.d(TAG, "Stopping video.");
+        Log.d(TAG, "Stopping video.");
         isActive = false;
-        player.stop();
         if(playerContainer != null) {
             Log.d(TAG, "view found - removing container");
             player.setPlayWhenReady(false);

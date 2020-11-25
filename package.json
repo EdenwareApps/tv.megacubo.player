@@ -36,5 +36,5 @@
     "url": "git+https://github.com/efoxbr/cordova-megacubo-player-plugin.git"
   },
   "scripts": {},
-  "version": "0.0.2"
+  "version": "0.0.3"
 }
