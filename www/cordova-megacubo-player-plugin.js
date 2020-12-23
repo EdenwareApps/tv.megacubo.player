@@ -60,6 +60,10 @@ function MegacuboPlayer() {
         exec(success, error, "cordova-megacubo-player-plugin", "unMute", [])
     }
 
+    self.restartApp = function(success, error) {
+        exec(success, error, "cordova-megacubo-player-plugin", "restart", [])
+    }
+
     self.seek = function(to, success, error) {
         console.warn("RATIO", to)
         clearTimeout(self.seekTimer)

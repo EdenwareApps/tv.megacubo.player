@@ -60,6 +60,11 @@ import java.net.URL;
 import java.util.Locale;
 import java.util.HashMap;
 
+import android.app.AlarmManager;
+import android.app.PendingIntent;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+
 public class MegacuboPlayerPlugin extends CordovaPlugin {
 
     private Uri uri;
@@ -267,6 +272,8 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                     try {
                         if (action.equals("play")) {
                             MCLoad(args.getString(0), args.getString(1), args.getString(2), callbackContext);
+                        } else if(action.equals("restart")) {
+                            MCRestartApp();
                         } else if(isActive) {
                             if(action.equals("pause")) {
                                 MCPause();
@@ -550,6 +557,46 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
         }
         player.release();
         player = null;
+    }
+
+    private void MCRestartApp(){
+        String baseError = "Unable to cold restart application: ";
+        try {
+            Log.d(TAG, "Cold restarting application");
+            if (context != null) {
+                //fetch the packagemanager so we can get the default launch activity
+                // (you can replace this intent with any other activity if you want
+                PackageManager pm = context.getPackageManager();
+                if (pm != null) {
+                    //create the intent with the default start activity for your application
+                    Intent mStartActivity = pm.getLaunchIntentForPackage(
+                            context.getPackageName()
+                    );
+                    if (mStartActivity != null) {
+                        //mStartActivity.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                        //create a pending intent so the application is restarted after System.exit(0) was called.
+                        // We use an AlarmManager to call this intent in 100ms
+                        int mPendingIntentId = 223344;
+                        PendingIntent mPendingIntent = PendingIntent
+                                .getActivity(context, mPendingIntentId, mStartActivity,
+                                        PendingIntent.FLAG_CANCEL_CURRENT);
+                        AlarmManager mgr = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+                        mgr.set(AlarmManager.RTC, System.currentTimeMillis() + 100, mPendingIntent);
+                        Log.i(TAG,"Killing application for cold restart");
+                        //kill the application
+                        System.exit(0);
+                    } else {
+                        Log.d(TAG, baseError+"StartActivity is null");
+                    }
+                } else {
+                    Log.d(TAG, baseError+"PackageManager is null");
+                }
+            } else {
+                Log.d(TAG, baseError+"Context is null");
+            }
+        } catch (Exception ex) {
+            Log.d(TAG, baseError+ ex.getMessage());
+        }
     }
     
     public static void setTimeout(Runnable runnable, int delay){
