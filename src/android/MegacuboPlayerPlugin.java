@@ -178,8 +178,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                 public void onPlayerError(ExoPlaybackException error) {
                     String what;
                     String errStr = error.toString();
-                    Log.e(TAG, "onPlayerError " + errStr + ", " + errStr.indexOf("PlaylistStuckException"));
-                    if(errStr.indexOf("PlaylistStuckException") != -1){
+                    if(errStr.indexOf("PlaylistStuck") != -1 || errStr.indexOf("BehindLiveWindow") != -1){
                         sendEvent("state", "loading");
                         sendEventEnabled = false;
                         player.retry();
@@ -190,6 +189,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                                 sendEvent("state", currentPlayerState);
                             }
                         }, 100);
+                        Log.e(TAG, "onPlayerError (auto-recovering) " + errStr);
                     } else {
                         switch (error.type) {
                             case ExoPlaybackException.TYPE_SOURCE:
@@ -229,6 +229,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                 }
             }
                         */
+                        Log.e(TAG, "onPlayerError (fatal) " + errStr +" "+ what);
                         sendEvent("error", "ExoPlayer error " + what);
                         MCStop();
                     }
