@@ -94,6 +94,9 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     private static final int BUFFER_SEGMENT_COUNT = 256;
 
     private String currentPlayerState = "";
+    private String currentURL = "";
+    private String currentMimetype = "";
+    private String currentCookie = "";
     private boolean sendEventEnabled = true;
     private int videoWidth = 1280;
     private int videoHeight = 720;
@@ -181,8 +184,9 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                     if(errStr.indexOf("PlaylistStuck") != -1 || errStr.indexOf("BehindLiveWindow") != -1){
                         sendEvent("state", "loading");
                         sendEventEnabled = false;
-                        player.retry();
-                        player.setPlayWhenReady(true);
+                        player.setPlayWhenReady(false);
+                        player.stop();
+                        MCPrepare();
                         setTimeout(() -> {
                             sendEventEnabled = true;
                             if(currentPlayerState != "loading"){
@@ -445,17 +449,25 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     private void MCLoad(String uri, String mimetype, String cookie, final CallbackContext callbackContext) {
         mainCallbackContext = callbackContext;
 
-        initMegacuboPlayer();
-
-        // player!!.audioAttributes = AudioAttributes.Builder().setFlags(C.FLAG_AUDIBILITY_ENFORCED).setUsage(C.USAGE_NOTIFICATION_RINGTONE).setContentType(C.CONTENT_TYPE_SPEECH).build()
-
-        MediaSource mediaSource = getMediaSource(uri, mimetype, cookie);
-        player.prepare(mediaSource);
-        player.setPlayWhenReady(true);
+        currentURL = uri;
+        currentMimetype = mimetype;
+        currentCookie = cookie;
+        
+        MCPrepare();
 
         PluginResult pluginResult = new PluginResult(PluginResult.Status.NO_RESULT);
         pluginResult.setKeepCallback(true);
         callbackContext.sendPluginResult(pluginResult);
+    }
+
+    private void MCPrepare() {
+        initMegacuboPlayer();
+
+        // player!!.audioAttributes = AudioAttributes.Builder().setFlags(C.FLAG_AUDIBILITY_ENFORCED).setUsage(C.USAGE_NOTIFICATION_RINGTONE).setContentType(C.CONTENT_TYPE_SPEECH).build()
+
+        MediaSource mediaSource = getMediaSource(currentURL, currentMimetype, currentCookie);
+        player.prepare(mediaSource);
+        player.setPlayWhenReady(true);
     }
 
     private void initMegacuboPlayer() {
@@ -474,10 +486,9 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                 player.addListener(eventListener);
                 player.setVideoDebugListener(videoListener);
                 playerContainer.addView(playerView);
+                aspectRatioParams = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                parentView.setBackgroundColor(Color.BLACK);
             }
-
-            aspectRatioParams = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            parentView.setBackgroundColor(Color.BLACK);
             parentView.addView(playerContainer, 0, aspectRatioParams);
         }
     }
