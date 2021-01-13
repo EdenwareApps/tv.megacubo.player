@@ -71,9 +71,15 @@ function MegacuboPlayer() {
         self.emit('timeupdate')
     }
 
-    self.ratio = function(rt, success, error) {
-        console.warn("RATIO", rt)
-        exec(success, error, "cordova-megacubo-player-plugin", "ratio", [rt])
+    self.ratio = function(r, success, error) {
+        if(typeof(r) == 'number' && !isNaN(r)){
+			if(r != self.aspectRatio){
+				console.log('ratio', r)
+				exec(success, error, "cordova-megacubo-player-plugin", "ratio", [r])
+			}
+		} else {
+			console.error('BAD RATIO VALUE '+ typeof(r), r)
+		}
     }
 
     self.onTrackingEvent = e => {

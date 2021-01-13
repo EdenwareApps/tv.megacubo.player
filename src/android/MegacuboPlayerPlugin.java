@@ -370,9 +370,9 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
             
             int screenHeight = webView.getView().getHeight();
             int screenWidth = webView.getView().getWidth();
-            int screenRatio = screenWidth / screenHeight;
+            float screenRatio = (float)screenWidth / screenHeight; // cast one of the operands to float
 
-            if(screenRatio > videoForcedRatio){
+            if(videoForcedRatio > screenRatio){
                 videoForcedWidth = screenWidth;
                 videoForcedHeight = (int) (screenWidth / videoForcedRatio);
             } else {
@@ -380,7 +380,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                 videoForcedWidth = (int) (screenHeight * videoForcedRatio);
             }
 
-            Log.d(TAG, "ratio(" + videoForcedWidth + "x" + videoForcedHeight + ") " + videoWidth + 'x' + videoHeight + " " + screenWidth + 'x' + screenHeight + " " + videoForcedRatio);
+            Log.d(TAG, "RATIO: " + videoForcedWidth + "x" + videoForcedHeight + "(" + videoForcedRatio + ") , SCREEN: " + screenWidth + 'x' + screenHeight + " (" + screenRatio + ") ");
             
             aspectRatioParams.gravity = Gravity.CENTER;
             aspectRatioParams.width = videoForcedWidth;
