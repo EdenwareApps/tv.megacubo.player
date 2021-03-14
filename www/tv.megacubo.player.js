@@ -32,38 +32,38 @@ function MegacuboPlayer() {
         }
     }
     self.play = function(uri, mimetype, cookie, success, error) {
-        exec(success, error, "cordova-megacubo-player-plugin", "play", [uri, mimetype, cookie])
+        exec(success, error, "tv.megacubo.player", "play", [uri, mimetype, cookie])
     }
     self.stop = function(success, error) {
-        exec(success, error, "cordova-megacubo-player-plugin", "stop", [])
+        exec(success, error, "tv.megacubo.player", "stop", [])
     }
     self.pause = function(success, error) {
-        exec(success, error, "cordova-megacubo-player-plugin", "pause", [])
+        exec(success, error, "tv.megacubo.player", "pause", [])
     }
     self.resume = function(success, error) {
-        exec(success, error, "cordova-megacubo-player-plugin", "resume", [])
+        exec(success, error, "tv.megacubo.player", "resume", [])
     }
     self.mute = function(success, error) {
-        exec(success, error, "cordova-megacubo-player-plugin", "mute", [])
+        exec(success, error, "tv.megacubo.player", "mute", [])
     }
     self.unMute = function(success, error) {
-        exec(success, error, "cordova-megacubo-player-plugin", "unMute", [])
+        exec(success, error, "tv.megacubo.player", "unMute", [])
     }
     self.restartApp = function(success, error) {
-        exec(success, error, "cordova-megacubo-player-plugin", "restart", [])
+        exec(success, error, "tv.megacubo.player", "restart", [])
     }
     self.getAppMetrics = function(success, error) {
-        exec(success, error, "cordova-megacubo-player-plugin", "getAppMetrics", [])
+        exec(success, error, "tv.megacubo.player", "getAppMetrics", [])
     }
     self.seek = function(to, success, error) {
         clearTimeout(self.seekTimer)
-        exec(success, error, "cordova-megacubo-player-plugin", "seek", [to])
+        exec(success, error, "tv.megacubo.player", "seek", [to])
         self.emit('timeupdate')
     }
     self.ratio = function(r, success, error) {
         if(typeof(r) == 'number' && !isNaN(r)){
 			if(r != self.aspectRatio){
-				exec(success, error, "cordova-megacubo-player-plugin", "ratio", [r])
+				exec(success, error, "tv.megacubo.player", "ratio", [r])
 			}
 		} else {
 			console.error('BAD RATIO VALUE '+ typeof(r), r)
@@ -102,15 +102,10 @@ function MegacuboPlayer() {
                 self.emit('durationchange')
             }
         })
-        exec(self.onTrackingEvent, function() {}, "cordova-megacubo-player-plugin", "bind", [navigator.userAgent])
-        exec(() => {}, console.error, "cordova-megacubo-player-plugin", "getAppMetrics", [])
+        exec(self.onTrackingEvent, function() {}, "tv.megacubo.player", "bind", [navigator.userAgent])
+        exec(() => {}, console.error, "tv.megacubo.player", "getAppMetrics", [])
     }
     self.init()
 }
-cordova.addConstructor(function (){
-	if (!window.plugins) {
-		window.plugins = {};
-	}
-	window.plugins.megacubo = new MegacuboPlayer()
-    return window.plugins.megacubo;
-})
+
+module.exports = new MegacuboPlayer()

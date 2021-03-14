@@ -3,11 +3,11 @@
     "name": "Megacubo Player Cordova Plugin"
   },
   "bugs": {
-    "url": "https://github.com/efoxbr/cordova-megacubo-player-plugin/issues"
+    "url": "https://github.com/efoxbr/tv.megacubo.player/issues"
   },
   "bundleDependencies": false,
   "cordova": {
-    "id": "cordova-megacubo-player-plugin",
+    "id": "tv.megacubo.player",
     "platforms": [
       "android",
       "ios"
@@ -18,7 +18,7 @@
   "engines": {
     "cordovaDependencies": {}
   },
-  "homepage": "https://github.com/efoxbr/cordova-megacubo-player-plugin#readme",
+  "homepage": "https://github.com/efoxbr/tv.megacubo.player#readme",
   "keywords": [
     "cordova",
     "exoplayer",
@@ -30,11 +30,11 @@
     "cordova-ios"
   ],
   "license": "GPL-3.0",
-  "name": "cordova-megacubo-player-plugin",
+  "name": "tv.megacubo.player",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/efoxbr/cordova-megacubo-player-plugin.git"
+    "url": "git+https://github.com/efoxbr/tv.megacubo.player.git"
   },
   "scripts": {},
-  "version": "0.0.1"
+  "version": "0.0.7"
 }

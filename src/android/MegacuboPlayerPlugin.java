@@ -1,24 +1,31 @@
-package com.megacubo.cordova;
+package tv.megacubo.player;
 
 import android.net.Uri;
 import android.app.Dialog;
+import android.graphics.Point;
 import android.graphics.Color;
 import android.content.Context;
+import android.content.res.Resources;
+import android.content.res.Configuration;
 import android.content.DialogInterface;
 import android.os.Bundle;
 import android.os.Handler;
 import android.util.Log;
 import android.util.DisplayMetrics;
+import android.view.Window;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.MotionEvent;
+import android.view.Display; 
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.WindowManager;
-import android.widget.RelativeLayout;
+import android.view.View.OnLayoutChangeListener;
 import android.widget.FrameLayout;
+import android.widget.RelativeLayout;
 
 import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.Player;
+import com.google.android.exoplayer2.Timeline;
 import com.google.android.exoplayer2.util.Util;
 import com.google.android.exoplayer2.SeekParameters;
 import com.google.android.exoplayer2.ExoPlayerFactory;
@@ -55,7 +62,14 @@ import org.json.JSONObject;
 
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.util.Locale;
 import java.util.HashMap;
+import java.util.List;
+
+import android.app.AlarmManager;
+import android.app.PendingIntent;
+import android.content.Intent;
+import android.content.pm.PackageManager;
 
 public class MegacuboPlayerPlugin extends CordovaPlugin {
 
@@ -68,6 +82,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     private FrameLayout playerContainer;
     private FrameLayout.LayoutParams aspectRatioParams;
     
+    private boolean isActive;
     private boolean isPlaying;
     private Handler mainHandler;
     private Handler handler;
@@ -84,18 +99,26 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     private static final int BUFFER_SEGMENT_SIZE = 64 * 1024;
     private static final int BUFFER_SEGMENT_COUNT = 256;
 
+    private String currentPlayerState = "";
+    private String currentURL = "";
+    private String currentMimetype = "";
+    private String currentCookie = "";
+    private boolean sendEventEnabled = true;
     private int videoWidth = 1280;
     private int videoHeight = 720;
     private int videoForcedWidth = 1280;
     private int videoForcedHeight = 720;
     private float videoForcedRatio = 1.7777777777777777f; // 16 / 9
 
+	private String TAG = "MegacuboPlayerPlugin";
+    private Timeline.Period period = new Timeline.Period();
+    
     @Override
     public void initialize(CordovaInterface cordova, CordovaWebView webView) {
         super.initialize(cordova, webView);
         if(playerContainer == null) {
 
-            Log.d("Exoplayer", "init");
+            Log.d(TAG, "init");
 
             context = this.cordova.getActivity().getApplicationContext();
             playerContainer = new FrameLayout(cordova.getActivity());
@@ -108,7 +131,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                     cordova.getActivity().runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
-                            sendEvent("time", "{\"currentTime\":" + (player.getCurrentPosition() / 1000) + ",\"duration\":" + (player.getDuration() / 1000) + "}");
+                            GetTimeData();
                             if(isPlaying){
                                 handler.postDelayed(timer, 1000);
                             }
@@ -127,8 +150,10 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                     if(playWhenReady){
                         switch(playbackState){
                             case Player.STATE_IDLE: // the player is stopped or playback failed.
-                            case Player.STATE_ENDED: // finished playing all media.
                                 state = "";
+                                break;
+                            case Player.STATE_ENDED: // finished playing all media.
+                                state = "ended";
                                 break;
                             case Player.STATE_BUFFERING: // not able to immediately play from its current position, more data needs to be loaded.
                                 state = "loading";
@@ -138,19 +163,27 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                                 break;
                         }
                     } else {
-                        if(playbackState == Player.STATE_IDLE || playbackState == Player.STATE_ENDED){
-                            state = "";
-                        } else {
-                            state = "paused";
+                        switch(playbackState){
+                            case Player.STATE_IDLE:
+                                state = "";
+                                break;
+                            case Player.STATE_ENDED:
+                                state = "ended";
+                                break;
+                            case Player.STATE_BUFFERING:
+                            case Player.STATE_READY:
+                                state = "paused";
+                                break;
                         }
                     }
-                    sendEvent("state", state);
+                    currentPlayerState = state;
+                    sendEvent("state", state, false);
                 }
 
                 @Override 
                 public void onIsPlayingChanged(boolean playing){
                     isPlaying = playing;
-                    sendEvent("playing", String.valueOf(isPlaying));
+                    sendEvent("playing", String.valueOf(isPlaying), false);
                     if(isPlaying) {
                         handler.postDelayed(timer, 0);
                     } else {
@@ -160,46 +193,79 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 
                 @Override
                 public void onPlayerError(ExoPlaybackException error) {
-                    final String what;
-                    switch (error.type) {
-                    case ExoPlaybackException.TYPE_SOURCE:
-                        what = error.getSourceException().getMessage();
-                        break;
-                    case ExoPlaybackException.TYPE_RENDERER:
-                        what = error.getRendererException().getMessage();
-                        break;
-                    case ExoPlaybackException.TYPE_UNEXPECTED:
-                        what = error.getUnexpectedException().getMessage();
-                        break;
-                    default:
-                        what = "Unknown: " + error;
-                    }
-                    /*
-                    
-        if (e.type == ExoPlaybackException.TYPE_RENDERER) {
-            Exception cause = e.getRendererException();
-            if (cause instanceof MediaCodecRenderer.DecoderInitializationException) {
-                // Special case for decoder initialization failures.
-                MediaCodecRenderer.DecoderInitializationException decoderInitializationException =
-                        (MediaCodecRenderer.DecoderInitializationException) cause;
-                if (decoderInitializationException.decoderName == null) {
-                    if (decoderInitializationException.getCause() instanceof MediaCodecUtil.DecoderQueryException) {
-                        errorString = getResources().getString(R.string.error_querying_decoders);
-                    } else if (decoderInitializationException.secureDecoderRequired) {
-                        errorString = getResources().getString(R.string.error_no_secure_decoder,
-                                decoderInitializationException.mimeType);
+                    String what;
+                    String errStr = error.toString();
+					switch (error.type) {
+						case ExoPlaybackException.TYPE_SOURCE:
+							what = "Source error: " + error.getSourceException().getMessage();
+							break;
+						case ExoPlaybackException.TYPE_RENDERER:
+							what = "Renderer error: " + error.getRendererException().getMessage();
+							break;
+						case ExoPlaybackException.TYPE_UNEXPECTED:
+							what = "Unexpected error: " + error.getUnexpectedException().getMessage();
+							break;
+						default:
+							what = "Unknown error: " + errStr;
+					}
+					String errStack = Log.getStackTraceString(error); 
+					String errorFullStr = errStr + " " + what + " " + errStack;
+                    if(
+                    errorFullStr.indexOf("PlaylistStuck") != -1 || 
+                    errorFullStr.indexOf("BehindLiveWindow") != -1 || 
+                    errorFullStr.indexOf("InvalidResponseCode") != -1 || 
+                    errorFullStr.indexOf("Most likely not a Transport Stream") != -1 ||
+                    errorFullStr.indexOf("PlaylistResetException") != -1 || 
+                    errorFullStr.indexOf("Renderer error") != -1
+                    ){
+                        sendEvent("state", "loading", false);
+                        sendEventEnabled = false;
+                        /*
+                        if(player != null){
+							player.setPlayWhenReady(false);
+							player.stop();
+						}
+                        MCPrepare();
+                        */
+                        
+						player.prepare();
+						player.setPlayWhenReady(true);
+                        setTimeout(() -> {
+                            sendEventEnabled = true;
+                            if(currentPlayerState != "loading"){
+                                sendEvent("state", currentPlayerState, false);
+                            }
+                        }, 100);
+                        Log.e(TAG, "onPlayerError (auto-recovering) " + errStr + " " + what);
                     } else {
-                        errorString = getResources().getString(R.string.error_no_decoder,
-                                decoderInitializationException.mimeType);
+/*
+if (e.type == ExoPlaybackException.TYPE_RENDERER) {
+	Exception cause = e.getRendererException();
+	if (cause instanceof MediaCodecRenderer.DecoderInitializationException) {
+		// Special case for decoder initialization failures.
+		MediaCodecRenderer.DecoderInitializationException decoderInitializationException =
+				(MediaCodecRenderer.DecoderInitializationException) cause;
+		if (decoderInitializationException.decoderName == null) {
+			if (decoderInitializationException.getCause() instanceof MediaCodecUtil.DecoderQueryException) {
+				errorString = getResources().getString(R.string.error_querying_decoders);
+			} else if (decoderInitializationException.secureDecoderRequired) {
+				errorString = getResources().getString(R.string.error_no_secure_decoder,
+						decoderInitializationException.mimeType);
+			} else {
+				errorString = getResources().getString(R.string.error_no_decoder,
+						decoderInitializationException.mimeType);
+			}
+		} else {
+			errorString = getResources().getString(R.string.error_instantiating_decoder,
+					decoderInitializationException.decoderName);
+		}
+	}
+}
+*/
+                        Log.e(TAG, "onPlayerError (fatal) " + errStr +" "+ what);
+                        sendEvent("error", "ExoPlayer error " + what, false);
+                        MCStop();
                     }
-                } else {
-                    errorString = getResources().getString(R.string.error_instantiating_decoder,
-                            decoderInitializationException.decoderName);
-                }
-            }
-        }
-                    */
-                    sendEvent("error", "ExoPlayer error " + what);
                 }
             };
             
@@ -216,166 +282,246 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
             }
 
         };
+		
+		webView.getView().addOnLayoutChangeListener(new OnLayoutChangeListener() {
+			@Override
+			public void onLayoutChange(View v, int left, int top, int right,
+					int bottom, int oldLeft, int oldTop, int oldRight,
+					int oldBottom) {
+				GetAppMetrics();
+			}
+		});
 
-        Log.d("MegacuboPlayer", "We were initialized");	
+        Log.d(TAG, "We were initialized");	
     }
 
     @Override
     public boolean execute(String action, JSONArray args, CallbackContext callbackContext) throws JSONException {
         //noinspection IfCanBeSwitch using if instead of switch in order to maintain compatibility with Java 6 projects
-        Log.d("MegacuboPlayer", action);
-        if (action.equals("play")) {
-            load(args.getString(0), args.getString(1), args.getString(2), callbackContext);
-            return true;
-        } else if (action.equals("pause")) {
-            cordova.getActivity().runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    player.setPlayWhenReady(false);
-                }
-            });
-            return true;
-        } else if (action.equals("resume")) {
-            cordova.getActivity().runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    player.setPlayWhenReady(true);
-                }
-            });
-            return true;
-        } else if (action.equals("seek")) {
+        Log.d(TAG, action);
+        if(action.equals("bind")) {
+            if(callbackContext != null) {
+                eventsTrackingContext = callbackContext;
+            }
+            ua = args.getString(0);
+            Log.d(TAG, "binding events bridge");
+            if(callbackContext == null) {
+                Log.d(TAG, "bind called with null");
+            }
+        } else {
             cordova.getActivity().runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
                     try {
-                        player.seekTo(args.getInt(0) * 1000);
-                    } catch (JSONException e) {
-                        throw new RuntimeException(e);
-                    }  
-                }
-            });
-            return true;
-        } else if (action.equals("stop")) {
-            cordova.getActivity().runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    player.stop();
-                    if(playerContainer != null) {
-                        Log.d("MegacuboPlayer", "view found - removing container");
-                        player.setPlayWhenReady(false);
-                        player.stop();
-                        player.seekTo(0);
-                        parentView.removeView(playerContainer);
-                    } else {
-                        Log.d("MegacuboPlayer", "view not found - container not removed");
-                    }
-                }
-            });
-            return true;
-        } else if(action.equals("mute")) {            
-            cordova.getActivity().runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    float volume = player.getVolume();
-                    if(currentVolume == 0f || volume != 0f){
-                        currentVolume = volume;
-                    }
-                    try {
-                        if(args.getBoolean(0) == true){
-                            player.setVolume(0f);
-                        } else {
-                            player.setVolume(currentVolume);
+                        if (action.equals("play")) {
+                            MCLoad(args.getString(0), args.getString(1), args.getString(2), callbackContext);
+                        } else if(action.equals("restart")) {
+                            MCRestartApp();
+                        } else if(action.equals("getAppMetrics")) { 
+							GetAppMetrics();
+						} else if(isActive) {
+                            if(action.equals("pause")) {
+                                MCPause();
+                            } else if (action.equals("resume")) {
+                                MCResume();
+                            } else if (action.equals("seek")) {
+                                MCSeek(args.getInt(0) * 1000);
+                            } else if (action.equals("stop")) {
+                                MCStop();
+                            } else if(action.equals("mute")) {            
+                                MCMute(args.getBoolean(0));
+                            } else if(action.equals("volume")) {        
+                                MCVolume(args.getInt(0) / 100);
+                            } else if(action.equals("ratio")){  
+                                float ratio = Float.valueOf(args.getString(0));
+                                MCRatio(ratio);
+                            }
                         }
                     } catch (JSONException e) {
                         throw new RuntimeException(e);
                     }  
                 }
             });
-        } else if(action.equals("volume")) {            
-            cordova.getActivity().runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    try {
-                        float volume = args.getInt(0) / 100;
-                        player.setVolume(volume);
-                    } catch (JSONException e) {
-                        throw new RuntimeException(e);
-                    }  
-                }
-            });
-        } else if(action.equals("ratio")){              
-            cordova.getActivity().runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    try {
-                        float ratio = Float.valueOf(args.getString(0));
-                        ApplyAspectRatio(ratio);
-                    } catch (JSONException e) {
-                        throw new RuntimeException(e);
-                    }  
-                }
-            });
-        } else if(action.equals("bind")) {
-            if(callbackContext != null) {
-                eventsTrackingContext = callbackContext;
-            }
-            ua = args.getString(0);
-            Log.d("MegacuboPlayer", "binding events bridge");
-            if(callbackContext == null) {
-                Log.d("MegacuboPlayer", "bind called with null");
-            }
-            return true;
         }
-        return false;
+        return true;
+    }
+    
+    @Override
+    public void onConfigurationChanged(Configuration newConfig){
+        super.onConfigurationChanged(newConfig);
+        GetAppMetrics();
+    }
+            
+    public void GetAppMetrics() {
+        // status bar height
+        Resources resources = context.getResources();
+        float scaleRatio = resources.getDisplayMetrics().density;
+        int statusBarHeight = 0;
+        int top = 0;
+        int bottom = 0;
+        int right = 0;
+        int left = 0;
+        int resourceId = resources.getIdentifier("status_bar_height", "dimen", "android");
+        if (resourceId > 0) {
+            statusBarHeight = resources.getDimensionPixelSize(resourceId);
+            statusBarHeight = (int) (((float)statusBarHeight) / scaleRatio);
+        }
+
+        // navigation bar height
+        int navigationBarHeight = 0;
+        resourceId = resources.getIdentifier("navigation_bar_height", "dimen", "android");
+        if (resourceId > 0) {
+            navigationBarHeight = resources.getDimensionPixelSize(resourceId);
+            navigationBarHeight = (int) (((float)navigationBarHeight) / scaleRatio);
+        }
+        
+        Window win = cordova.getActivity().getWindow();
+        Display display = win.getWindowManager().getDefaultDisplay();
+		Point screenSize = new Point();
+		Point usableSize = new Point();
+		display.getRealSize(screenSize);
+        display.getSize(usableSize);
+
+        top = statusBarHeight;
+        if (usableSize.x == screenSize.x) {
+			bottom = navigationBarHeight;
+		} else {
+			int rotation = display.getRotation();  
+			/*
+			switch (rotation) {
+				case 0:
+					// SCREEN_ORIENTATION_PORTRAIT
+					break;
+				case 2:
+					// SCREEN_ORIENTATION_REVERSE_PORTRAIT
+					break;
+				case 1:
+					// SCREEN_ORIENTATION_LANDSCAPE
+					break;
+				case 3:
+					// SCREEN_ORIENTATION_REVERSE_LANDSCAPE
+					break;
+			}
+			*/
+			if(rotation == 3){
+				left = navigationBarHeight;
+			}  else {
+				right = navigationBarHeight;
+			}
+		}
+        
+        sendEvent("appMetrics", "{\"top\":" + top + ",\"bottom\":" + bottom + ",\"right\":" + right + ",\"left\":" + left + "}", true);
+    }
+
+    public void Seek(long to){ // TODO, on live streams, we're unable to seek back too much, why?!        
+        if(isActive){
+            boolean debug = true;
+            Timeline timeline = player.getCurrentTimeline();
+            int currentWindowIndex = player.getCurrentWindowIndex();
+            long offset = player.getCurrentPosition();
+            long position;
+            long currentPosition = player.getCurrentPosition();
+            if (timeline != null) {
+                offset = (timeline.getPeriod(player.getCurrentPeriodIndex(), period).getPositionInWindowMs() * -1);
+                position = offset + currentPosition;
+
+                if(debug){
+                    Log.d(TAG, "SEEK DEBUG " + to + " :: " + offset);
+                }
+
+                if(to < offset){
+                    to = 0; // zero after offset
+                } else {
+                    to = to - offset;
+                }
+
+                if(debug){
+                    Log.d(TAG, "SEEKTO " + to + " " + currentPosition);
+                }
+
+                player.seekTo(to);
+
+                if(debug){
+                    Log.d(TAG, "SEEKED " + to + " " + player.getCurrentPosition());
+                }
+
+                GetTimeData();
+            }
+        }
+    }
+
+    public void GetTimeData(){        
+        if(isActive){
+            Timeline timeline = player.getCurrentTimeline();
+            long currentPosition = player.getCurrentPosition();
+            long position = 0;
+            long duration = 0;
+            long offset = 0;
+            
+            if (!timeline.isEmpty()) {
+                offset = (timeline.getPeriod(player.getCurrentPeriodIndex(), period).getPositionInWindowMs() * -1);
+
+                position = offset + currentPosition;
+
+                if(player.isCurrentWindowLive()){
+                    duration = offset + currentPosition + player.getTotalBufferedDuration();
+                } else {
+                    duration = offset + player.getDuration();
+                }
+
+                sendEvent("time", "{\"currentTime\":" + position + ",\"duration\":" + duration + "}", false);
+            }
+        }
     }
 
     public void ApplyAspectRatio(float ratio){
-        videoForcedRatio = ratio;
-        videoForcedHeight = (int) (videoWidth / videoForcedRatio);
-        
-        DisplayMetrics metrics = new DisplayMetrics();
-        this.cordova.getActivity().getWindowManager().getDefaultDisplay().getMetrics(metrics);
-        
-        int screenHeight = metrics.heightPixels;
-        int screenWidth = metrics.widthPixels;
-        int screenRatio = screenWidth / screenHeight;
+        if(isActive){
+            videoForcedRatio = ratio;
+            videoForcedHeight = (int) (videoWidth / videoForcedRatio);
+            
+            int screenHeight = webView.getView().getHeight();
+            int screenWidth = webView.getView().getWidth();
+            float screenRatio = (float)screenWidth / screenHeight; // cast one of the operands to float
 
-        if(screenRatio > videoForcedRatio){
-            videoForcedWidth = screenWidth;
-            videoForcedHeight = (int) (screenWidth / videoForcedRatio);
-        } else {
-            videoForcedHeight = screenHeight;
-            videoForcedWidth = (int) (screenHeight * videoForcedRatio);
+            if(videoForcedRatio > screenRatio){
+                videoForcedWidth = screenWidth;
+                videoForcedHeight = (int) (screenWidth / videoForcedRatio);
+            } else {
+                videoForcedHeight = screenHeight;
+                videoForcedWidth = (int) (screenHeight * videoForcedRatio);
+            }
+
+            //Log.d(TAG, "RATIO: " + videoForcedWidth + "x" + videoForcedHeight + "(" + videoForcedRatio + ") , SCREEN: " + screenWidth + "x" + screenHeight + " (" + screenRatio + ") ");
+            
+            aspectRatioParams.gravity = Gravity.CENTER;
+            aspectRatioParams.width = videoForcedWidth;
+            aspectRatioParams.height = videoForcedHeight;
+
+            playerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FILL);
+            playerContainer.setLayoutParams(aspectRatioParams);
+            playerContainer.requestLayout();
+            playerView.requestLayout();
+
+            sendEvent("ratio", "{\"ratio\":" + videoForcedRatio + ",\"width\":" + videoWidth + ",\"height\":" + videoHeight + "}", false);
         }
-
-        Log.d("MegacuboPlayer", "ratio(" + videoForcedWidth + "x" + videoForcedHeight + ") " + videoWidth + 'x' + videoHeight + " " + screenWidth + 'x' + screenHeight + " " + videoForcedRatio);
-        
-        aspectRatioParams.gravity = Gravity.CENTER;
-        aspectRatioParams.width = videoForcedWidth;
-        aspectRatioParams.height = videoForcedHeight;
-
-        playerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FILL);
-        playerContainer.setLayoutParams(aspectRatioParams);
-        playerContainer.requestLayout();
-        playerView.requestLayout();
-
-        sendEvent("ratio", "{\"ratio\":" + videoForcedRatio + ",\"width\":" + videoWidth + ",\"height\":" + videoHeight + "}");
     }
 
     public void ResetAspectRatio(){
-        videoWidth = 1280;
-        videoHeight = 720;
-        videoForcedHeight = 720;
-        videoForcedRatio = 1.7777777777777777f;
+        if(isActive){
+            videoWidth = 1280;
+            videoHeight = 720;
+            videoForcedHeight = 720;
+            videoForcedRatio = 1.7777777777777777f;
 
-        aspectRatioParams.width = FrameLayout.LayoutParams.MATCH_PARENT;
-        aspectRatioParams.height = FrameLayout.LayoutParams.MATCH_PARENT;
-        
-        Log.d("MegacuboPlayer", "ratio reset");
-        playerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT);
-        playerContainer.setLayoutParams(aspectRatioParams);
+            aspectRatioParams.width = FrameLayout.LayoutParams.MATCH_PARENT;
+            aspectRatioParams.height = FrameLayout.LayoutParams.MATCH_PARENT;
+            
+            Log.d(TAG, "ratio reset");
+            playerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT);
+            playerContainer.setLayoutParams(aspectRatioParams);
 
-        sendEvent("ratio", "{\"ratio\":" + videoForcedRatio + ",\"width\":" + videoWidth + ",\"height\":" + videoHeight + "}");
+            sendEvent("ratio", "{\"ratio\":" + videoForcedRatio + ",\"width\":" + videoWidth + ",\"height\":" + videoHeight + "}", false);
+        }
     }
 
     public MediaSource getMediaSource(String u, String mimetype, String cookie) {
@@ -397,7 +543,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                 ).createMediaSource(uri);
             case C.TYPE_OTHER:
                 return new ExtractorMediaSource(uri, dataSourceFactory, new DefaultExtractorsFactory(), mainHandler, null);
-                /**
+                /*
                 ExtractorSampleSource sampleSource = new ExtractorSampleSource(Uri.parse(uri), dataSourceFactory, allocator, BUFFER_SEGMENT_COUNT * BUFFER_SEGMENT_SIZE);
                 MediaCodecAudioTrackRenderer audioRenderer = new MediaCodecAudioTrackRenderer(sampleSource, null, true);
                 */
@@ -407,50 +553,58 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
         }
     }
 
-    private void load(String uri, String mimetype, String cookie, final CallbackContext callbackContext) {
-        cordova.getActivity().runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                mainCallbackContext = callbackContext;
+    private void MCLoad(String uri, String mimetype, String cookie, final CallbackContext callbackContext) {
+        mainCallbackContext = callbackContext;
 
-                initMegacuboPlayer();
+        currentURL = uri;
+        currentMimetype = mimetype;
+        currentCookie = cookie;
+        
+        MCPrepare();
 
-                // player!!.audioAttributes = AudioAttributes.Builder().setFlags(C.FLAG_AUDIBILITY_ENFORCED).setUsage(C.USAGE_NOTIFICATION_RINGTONE).setContentType(C.CONTENT_TYPE_SPEECH).build()
+        PluginResult pluginResult = new PluginResult(PluginResult.Status.NO_RESULT);
+        pluginResult.setKeepCallback(false);
+        callbackContext.sendPluginResult(pluginResult);
+    }
 
-                MediaSource mediaSource = getMediaSource(uri, mimetype, cookie);
-                player.prepare(mediaSource);
-                player.setPlayWhenReady(true);
+    private void MCPrepare() {
+        initMegacuboPlayer();
 
-                PluginResult pluginResult = new PluginResult(PluginResult.Status.NO_RESULT);
-                pluginResult.setKeepCallback(true);
-                callbackContext.sendPluginResult(pluginResult);
-            }
-        });
+        // player!!.audioAttributes = AudioAttributes.Builder().setFlags(C.FLAG_AUDIBILITY_ENFORCED).setUsage(C.USAGE_NOTIFICATION_RINGTONE).setContentType(C.CONTENT_TYPE_SPEECH).build()
+
+        MediaSource mediaSource = getMediaSource(currentURL, currentMimetype, currentCookie);
+        player.prepare(mediaSource);
+        player.setPlayWhenReady(true);
     }
 
     private void initMegacuboPlayer() {
-        if(player == null){
-            webView.getView().setBackgroundColor(android.R.color.transparent);
-            playerView = new PlayerView(context); 
-            player = ExoPlayerFactory.newSimpleInstance(context);
-            playerView.setUseController(false); 
-            playerView.setPlayer(player);
-            player.setHandleAudioBecomingNoisy(true);
-            player.setHandleWakeLock(true);
-            player.setSeekParameters(SeekParameters.CLOSEST_SYNC);
-            player.setVideoScalingMode(C.VIDEO_SCALING_MODE_SCALE_TO_FIT);
-            player.addListener(eventListener);
-            player.setVideoDebugListener(videoListener);
-            playerContainer.addView(playerView);
+        if(!isActive){
+            isActive = true;
+            if(player == null){
+                webView.getView().setBackgroundColor(android.R.color.transparent);
+                playerView = new PlayerView(context); 
+                player = ExoPlayerFactory.newSimpleInstance(context);
+                playerView.setUseController(false); 
+                playerView.setPlayer(player);
+                player.setHandleAudioBecomingNoisy(true);
+                player.setHandleWakeLock(true);
+                player.setSeekParameters(SeekParameters.CLOSEST_SYNC);
+                player.setVideoScalingMode(C.VIDEO_SCALING_MODE_SCALE_TO_FIT);
+                player.addListener(eventListener);
+                player.setVideoDebugListener(videoListener);
+                playerContainer.addView(playerView);
+                aspectRatioParams = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                parentView.setBackgroundColor(Color.BLACK);
+            }
+            parentView.addView(playerContainer, 0, aspectRatioParams);
         }
-
-        aspectRatioParams = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        parentView.setBackgroundColor(Color.BLACK);
-        parentView.addView(playerContainer, 0, aspectRatioParams);
     }
 
-    public void sendEvent(String type, String data){
-        if(eventsTrackingContext != null) {
+    public void sendEvent(String type, String data, boolean force){
+        if(sendEventEnabled && isActive){
+			force = true;
+        }
+        if(force && eventsTrackingContext != null) {
             JSONObject json = new JSONObject();
             try {
                 json.put("type", type);
@@ -461,7 +615,127 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
             PluginResult pluginResult = new PluginResult(PluginResult.Status.OK, json);
             pluginResult.setKeepCallback(true);
             eventsTrackingContext.sendPluginResult(pluginResult);
-            Log.d("MegacuboPlayer", "sent callback");
         }
     }
+
+    private void MCRatio(float ratio){        
+        ApplyAspectRatio(ratio);
+    }
+
+    private void MCVolume(float volume){
+        if(isActive){
+            player.setVolume(volume);
+        }
+    }
+
+    private void MCMute(boolean doMute) {
+        if(isActive){
+            float volume = player.getVolume();
+            if(currentVolume == 0f || volume != 0f){
+                currentVolume = volume;
+            }
+            if(doMute == true){
+                player.setVolume(0f);
+            } else {
+                player.setVolume(currentVolume);
+            }
+        }
+    }
+
+    private void MCSeek(long to) {   
+        if(isActive){
+            Seek(to);
+        }
+    }
+
+    private void MCResume() {        
+        if(isActive){
+            if(currentPlayerState == "ended"){
+                player.seekTo(0);
+            }
+            player.setPlayWhenReady(true);
+        }
+    }
+    
+    private void MCPause() {
+        if(isActive){
+            player.setPlayWhenReady(false);
+        }
+    }
+
+	private void MCStop() {
+        Log.d(TAG, "Stopping video.");
+        isActive = false;
+		if(player != null){
+			player.setPlayWhenReady(false);
+			player.seekTo(0);
+			player.stop();
+			player.release();
+		}
+        if(playerContainer != null) {
+            Log.d(TAG, "view found - removing container");
+            parentView.removeView(playerContainer);
+        }
+        player = null;
+    }
+
+    private void MCRestartApp(){
+		MCStop();
+        String baseError = "Unable to cold restart application: ";
+        try {
+            Log.d(TAG, "Cold restarting application");
+            if (context != null) {
+                //fetch the packagemanager so we can get the default launch activity
+                // (you can replace this intent with any other activity if you want
+                PackageManager pm = context.getPackageManager();
+                if (pm != null) {
+                    //create the intent with the default start activity for your application
+                    Intent mStartActivity = pm.getLaunchIntentForPackage(
+                            context.getPackageName()
+                    );
+                    if (mStartActivity != null) {
+                        //mStartActivity.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                        //create a pending intent so the application is restarted after System.exit(0) was called.
+                        // We use an AlarmManager to call this intent in 100ms
+                        int mPendingIntentId = 223344;
+                        PendingIntent mPendingIntent = PendingIntent
+                                .getActivity(context, mPendingIntentId, mStartActivity,
+                                        PendingIntent.FLAG_CANCEL_CURRENT);
+                        AlarmManager mgr = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+                        mgr.set(AlarmManager.RTC, System.currentTimeMillis() + 100, mPendingIntent);
+                        Log.i(TAG,"Killing application for cold restart");
+                        //kill the application
+                        System.exit(0);
+                    } else {
+                        Log.d(TAG, baseError+"StartActivity is null");
+                    }
+                } else {
+                    Log.d(TAG, baseError+"PackageManager is null");
+                }
+            } else {
+                Log.d(TAG, baseError+"Context is null");
+            }
+        } catch (Exception ex) {
+            Log.d(TAG, baseError+ ex.getMessage());
+        }
+    }
+    
+    public static void setTimeout(Runnable runnable, int delay){
+        new Thread(() -> {
+            try {
+                Thread.sleep(delay);
+                runnable.run();
+            }
+            catch (Exception e){
+                System.err.println(e);
+            }
+        }).start();
+    }
+
+	@Override
+	public void onDestroy() {
+		super.onDestroy();
+		Log.d(TAG, "onDestroy triggered.");
+		MCStop();
+	}
 }
