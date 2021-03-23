@@ -58,7 +58,10 @@ function MegacuboPlayer() {
     self.seek = function(to, success, error) {
         clearTimeout(self.seekTimer)
         exec(success, error, "tv.megacubo.player", "seek", [to])
-        self.emit('timeupdate')
+        self.timeUpdateLocked = true
+        self.seekTime = setTimeout(() => {
+            self.timeUpdateLocked = false
+        }, 2000)
     }
     self.ratio = function(r, success, error) {
         if(typeof(r) == 'number' && !isNaN(r)){
@@ -67,6 +70,15 @@ function MegacuboPlayer() {
 			}
 		} else {
 			console.error('BAD RATIO VALUE '+ typeof(r), r)
+		}
+    }
+    self.setPlaybackRate = function(rate, success, error) {
+        if(typeof(rate) == 'number' && !isNaN(rate)){
+			if(rate != self.playbackRate){
+				exec(success, error, "tv.megacubo.player", "rate", [rate])
+			}
+		} else {
+			console.error('BAD PLAYBACK RATE VALUE '+ typeof(rate), rate)
 		}
     }
     self.onTrackingEvent = e => {
@@ -95,11 +107,15 @@ function MegacuboPlayer() {
             }
             if(e.currentTime > 0 && e.currentTime != self.currentTime){
                 self.currentTime = e.currentTime
-                self.emit('timeupdate')
+                if(!self.timeUpdateLocked){
+                    self.emit('timeupdate')
+                }
             }
             if(e.duration != self.duration){
                 self.duration = e.duration
-                self.emit('durationchange')
+                if(!self.timeUpdateLocked){
+                    self.emit('durationchange')
+                }
             }
         })
         exec(self.onTrackingEvent, function() {}, "tv.megacubo.player", "bind", [navigator.userAgent])

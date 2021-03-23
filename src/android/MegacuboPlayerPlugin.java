@@ -8,6 +8,7 @@ import android.content.Context;
 import android.content.res.Resources;
 import android.content.res.Configuration;
 import android.content.DialogInterface;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.util.Log;
@@ -15,6 +16,7 @@ import android.util.DisplayMetrics;
 import android.view.Window;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.view.Display; 
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -28,27 +30,26 @@ import com.google.android.exoplayer2.Player;
 import com.google.android.exoplayer2.Timeline;
 import com.google.android.exoplayer2.util.Util;
 import com.google.android.exoplayer2.SeekParameters;
-import com.google.android.exoplayer2.ExoPlayerFactory;
 import com.google.android.exoplayer2.SimpleExoPlayer;
+import com.google.android.exoplayer2.ExoPlayerFactory;
+import com.google.android.exoplayer2.PlaybackParameters;
 import com.google.android.exoplayer2.ExoPlaybackException;
 import com.google.android.exoplayer2.video.VideoListener;
-import com.google.android.exoplayer2.video.VideoRendererEventListener;
 import com.google.android.exoplayer2.ui.PlayerView;
 import com.google.android.exoplayer2.ui.AspectRatioFrameLayout;
 import com.google.android.exoplayer2.upstream.DefaultAllocator;
 import com.google.android.exoplayer2.upstream.DataSource;
+import com.google.android.exoplayer2.upstream.DefaultDataSource;
 import com.google.android.exoplayer2.upstream.DefaultDataSourceFactory;
+import com.google.android.exoplayer2.upstream.DefaultHttpDataSource;
 import com.google.android.exoplayer2.upstream.DefaultHttpDataSourceFactory;
+import com.google.android.exoplayer2.upstream.HttpDataSource;
 import com.google.android.exoplayer2.extractor.DefaultExtractorsFactory;
+import com.google.android.exoplayer2.MediaItem;
 import com.google.android.exoplayer2.source.MediaSource;
-import com.google.android.exoplayer2.source.ExtractorMediaSource;
-import com.google.android.exoplayer2.source.dash.DashMediaSource;
-import com.google.android.exoplayer2.source.dash.DefaultDashChunkSource;
-import com.google.android.exoplayer2.source.smoothstreaming.DefaultSsChunkSource;
-import com.google.android.exoplayer2.source.smoothstreaming.SsMediaSource;
+import com.google.android.exoplayer2.source.ProgressiveMediaSource;
+import com.google.android.exoplayer2.source.DefaultMediaSourceFactory;
 import com.google.android.exoplayer2.source.hls.HlsMediaSource;
-import com.google.android.exoplayer2.source.hls.DefaultHlsExtractorFactory;
-import com.google.android.exoplayer2.extractor.ts.DefaultTsPayloadReaderFactory;
 
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaInterface;
@@ -65,6 +66,10 @@ import java.net.URL;
 import java.util.Locale;
 import java.util.HashMap;
 import java.util.List;
+
+import java.net.CookieHandler;
+import java.net.CookieManager;
+import java.net.CookiePolicy;
 
 import android.app.AlarmManager;
 import android.app.PendingIntent;
@@ -94,7 +99,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     private ViewGroup parentView;
     private DataSource.Factory dataSourceFactory;
     private Player.EventListener eventListener;
-    private VideoRendererEventListener videoListener;
+    private VideoListener videoListener;
     
     private static final int BUFFER_SEGMENT_SIZE = 64 * 1024;
     private static final int BUFFER_SEGMENT_COUNT = 256;
@@ -103,12 +108,14 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     private String currentURL = "";
     private String currentMimetype = "";
     private String currentCookie = "";
+    private boolean viewAdded = false;
     private boolean sendEventEnabled = true;
+    private boolean fixingStalledPlayback = false;
     private int videoWidth = 1280;
     private int videoHeight = 720;
     private int videoForcedWidth = 1280;
     private int videoForcedHeight = 720;
-    private float videoForcedRatio = 1.7777777777777777f; // 16 / 9
+    private float videoForcedRatio = 1.7777777777777777f; // 16:9
 
 	private String TAG = "MegacuboPlayerPlugin";
     private Timeline.Period period = new Timeline.Period();
@@ -178,6 +185,9 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                     }
                     currentPlayerState = state;
                     sendEvent("state", state, false);
+                    if(playWhenReady && !fixingStalledPlayback && isPlaybackStalled()){
+                        fixStalledPlayback();
+                    }
                 }
 
                 @Override 
@@ -220,59 +230,36 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                     ){
                         sendEvent("state", "loading", false);
                         sendEventEnabled = false;
-                        /*
                         if(player != null){
 							player.setPlayWhenReady(false);
 							player.stop();
 						}
                         MCPrepare();
-                        */
-                        
-						player.prepare();
-						player.setPlayWhenReady(true);
-                        setTimeout(() -> {
-                            sendEventEnabled = true;
-                            if(currentPlayerState != "loading"){
-                                sendEvent("state", currentPlayerState, false);
-                            }
+                        // player.prepare();
+                        setTimeout(() -> {                            
+                            cordova.getActivity().runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    player.setPlayWhenReady(true);
+                                    sendEventEnabled = true;
+                                    if(currentPlayerState != "loading"){
+                                        sendEvent("state", currentPlayerState, false);
+                                    }
+                                }
+                            });
                         }, 100);
-                        Log.e(TAG, "onPlayerError (auto-recovering) " + errStr + " " + what);
+                        Log.e(TAG, "*onPlayerError (auto-recovering) " + errStr + " " + what);
                     } else {
-/*
-if (e.type == ExoPlaybackException.TYPE_RENDERER) {
-	Exception cause = e.getRendererException();
-	if (cause instanceof MediaCodecRenderer.DecoderInitializationException) {
-		// Special case for decoder initialization failures.
-		MediaCodecRenderer.DecoderInitializationException decoderInitializationException =
-				(MediaCodecRenderer.DecoderInitializationException) cause;
-		if (decoderInitializationException.decoderName == null) {
-			if (decoderInitializationException.getCause() instanceof MediaCodecUtil.DecoderQueryException) {
-				errorString = getResources().getString(R.string.error_querying_decoders);
-			} else if (decoderInitializationException.secureDecoderRequired) {
-				errorString = getResources().getString(R.string.error_no_secure_decoder,
-						decoderInitializationException.mimeType);
-			} else {
-				errorString = getResources().getString(R.string.error_no_decoder,
-						decoderInitializationException.mimeType);
-			}
-		} else {
-			errorString = getResources().getString(R.string.error_instantiating_decoder,
-					decoderInitializationException.decoderName);
-		}
-	}
-}
-*/
-                        Log.e(TAG, "onPlayerError (fatal) " + errStr +" "+ what);
+                        Log.e(TAG, "*onPlayerError (fatal) " + errStr +" "+ what);
                         sendEvent("error", "ExoPlayer error " + what, false);
                         MCStop();
                     }
                 }
-            };
-            
+            };            
             parentView = (ViewGroup) webView.getView().getParent();
         };
         
-        videoListener = new VideoRendererEventListener() {
+        videoListener = new VideoListener() {
 
             @Override
             public void onVideoSizeChanged(int width, int height, int unappliedRotationDegrees, float pixelWidthHeightRatio) {
@@ -309,17 +296,26 @@ if (e.type == ExoPlaybackException.TYPE_RENDERER) {
                 Log.d(TAG, "bind called with null");
             }
         } else {
-            cordova.getActivity().runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    try {
-                        if (action.equals("play")) {
+            if (action.equals("play")) {
+                cordova.getActivity().runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
                             MCLoad(args.getString(0), args.getString(1), args.getString(2), callbackContext);
-                        } else if(action.equals("restart")) {
-                            MCRestartApp();
-                        } else if(action.equals("getAppMetrics")) { 
-							GetAppMetrics();
-						} else if(isActive) {
+                        } catch (JSONException e) {
+                            throw new RuntimeException(e);
+                        }
+                    }
+                });
+            } else if(action.equals("restart")) {
+                MCRestartApp();
+            } else if(action.equals("getAppMetrics")) { 
+                GetAppMetrics();
+            } else if(isActive) {                
+                cordova.getActivity().runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
                             if(action.equals("pause")) {
                                 MCPause();
                             } else if (action.equals("resume")) {
@@ -332,16 +328,20 @@ if (e.type == ExoPlaybackException.TYPE_RENDERER) {
                                 MCMute(args.getBoolean(0));
                             } else if(action.equals("volume")) {        
                                 MCVolume(args.getInt(0) / 100);
-                            } else if(action.equals("ratio")){  
+                            } else if(action.equals("ratio")) {  
                                 float ratio = Float.valueOf(args.getString(0));
                                 MCRatio(ratio);
+                            } else if(action.equals("rate")) {
+                                float rate = Float.valueOf(args.getString(0));
+                                PlaybackParameters param = new PlaybackParameters(rate);
+                                player.setPlaybackParameters(param);
                             }
-                        }
-                    } catch (JSONException e) {
-                        throw new RuntimeException(e);
-                    }  
-                }
-            });
+                        } catch (JSONException e) {
+                            throw new RuntimeException(e);
+                        } 
+                    }
+                });
+            }
         }
         return true;
     }
@@ -387,23 +387,7 @@ if (e.type == ExoPlaybackException.TYPE_RENDERER) {
 			bottom = navigationBarHeight;
 		} else {
 			int rotation = display.getRotation();  
-			/*
-			switch (rotation) {
-				case 0:
-					// SCREEN_ORIENTATION_PORTRAIT
-					break;
-				case 2:
-					// SCREEN_ORIENTATION_REVERSE_PORTRAIT
-					break;
-				case 1:
-					// SCREEN_ORIENTATION_LANDSCAPE
-					break;
-				case 3:
-					// SCREEN_ORIENTATION_REVERSE_LANDSCAPE
-					break;
-			}
-			*/
-			if(rotation == 3){
+			if(rotation == 3 && Build.VERSION.SDK_INT > Build.VERSION_CODES.N){
 				left = navigationBarHeight;
 			}  else {
 				right = navigationBarHeight;
@@ -447,6 +431,50 @@ if (e.type == ExoPlaybackException.TYPE_RENDERER) {
 
                 GetTimeData();
             }
+        }
+    }
+
+    public boolean isPlaybackStalled(){        
+        if(sendEventEnabled && isActive && currentPlayerState == "loading" && currentMimetype.toLowerCase().indexOf("mpegurl") != -1){
+            Timeline timeline = player.getCurrentTimeline();
+            long currentPosition = player.getCurrentPosition();
+            long position = 0;
+            long duration = 0;
+            long offset = 0;
+            
+            if (!timeline.isEmpty()) {
+                offset = (timeline.getPeriod(player.getCurrentPeriodIndex(), period).getPositionInWindowMs() * -1);
+                position = offset + currentPosition;
+                if(player.isCurrentWindowLive()){
+                    duration = offset + currentPosition + player.getTotalBufferedDuration();
+                } else {
+                    duration = offset + player.getDuration();
+                }
+                return (position < duration - 3);
+            }
+        }
+        return false;
+    }
+
+    public void fixStalledPlayback(){   
+        if(isPlaybackStalled()){
+            if(fixingStalledPlayback){
+                Log.d(TAG, "nudging currentTime by +500ms");
+                long newTime = player.getCurrentPosition() + 500;
+                player.seekTo(newTime);
+            } else {
+                fixingStalledPlayback = true; // give a initial 500ms delay to siuation fix itself
+            }
+            setTimeout(() -> {                            
+                cordova.getActivity().runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        fixStalledPlayback();
+                    }
+                });
+            }, 500);
+        } else {
+            fixingStalledPlayback = false;
         }
     }
 
@@ -525,31 +553,18 @@ if (e.type == ExoPlaybackException.TYPE_RENDERER) {
     }
 
     public MediaSource getMediaSource(String u, String mimetype, String cookie) {
-        Uri uri = Uri.parse(u);
-        DefaultHttpDataSourceFactory defaultHttpDataSourceFactory = new DefaultHttpDataSourceFactory(Util.getUserAgent(context, ua));
-        if(cookie != ""){
-            defaultHttpDataSourceFactory.setDefaultRequestProperty("Cookie", cookie);
-        }
-        DataSource.Factory dataSourceFactory = new DefaultDataSourceFactory(context, null, defaultHttpDataSourceFactory);
-        int type = Util.inferContentType(uri.getLastPathSegment());
-        switch (type) {
-            case C.TYPE_SS:
-                return new SsMediaSource(uri, dataSourceFactory, new DefaultSsChunkSource.Factory(dataSourceFactory), mainHandler, null);
-            case C.TYPE_DASH:
-                return new DashMediaSource(uri, dataSourceFactory, new DefaultDashChunkSource.Factory(dataSourceFactory), mainHandler, null);
-            case C.TYPE_HLS:
-                return new HlsMediaSource.Factory(dataSourceFactory).setExtractorFactory(
-                    new DefaultHlsExtractorFactory(DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES, false)
-                ).createMediaSource(uri);
-            case C.TYPE_OTHER:
-                return new ExtractorMediaSource(uri, dataSourceFactory, new DefaultExtractorsFactory(), mainHandler, null);
-                /*
-                ExtractorSampleSource sampleSource = new ExtractorSampleSource(Uri.parse(uri), dataSourceFactory, allocator, BUFFER_SEGMENT_COUNT * BUFFER_SEGMENT_SIZE);
-                MediaCodecAudioTrackRenderer audioRenderer = new MediaCodecAudioTrackRenderer(sampleSource, null, true);
-                */
-            default: {
-                throw new IllegalStateException("Unsupported type: " + type);
-            }
+        MediaItem mediaItem = new MediaItem.Builder()
+            .setUri(Uri.parse(u))
+            .setMimeType​(mimetype)
+            .build();
+        Log.d(TAG, "MEDIASOURCE " + u + ", " + mimetype + ", " + ua + ", " + cookie);
+        DefaultHttpDataSourceFactory httpFactory = new DefaultHttpDataSourceFactory(ua, null);
+        httpFactory.getDefaultRequestProperties().set("Cookie", cookie);       
+        DefaultDataSourceFactory factory = new DefaultDataSourceFactory(context, null, httpFactory);
+        if(mimetype.toLowerCase().indexOf("mpegurl") != -1){
+            return new HlsMediaSource.Factory(factory).createMediaSource(mediaItem);
+        } else {
+            return new DefaultMediaSourceFactory(factory).createMediaSource(mediaItem);
         }
     }
 
@@ -573,7 +588,8 @@ if (e.type == ExoPlaybackException.TYPE_RENDERER) {
         // player!!.audioAttributes = AudioAttributes.Builder().setFlags(C.FLAG_AUDIBILITY_ENFORCED).setUsage(C.USAGE_NOTIFICATION_RINGTONE).setContentType(C.CONTENT_TYPE_SPEECH).build()
 
         MediaSource mediaSource = getMediaSource(currentURL, currentMimetype, currentCookie);
-        player.prepare(mediaSource);
+        player.setMediaSource(mediaSource, true);
+        player.prepare();
         player.setPlayWhenReady(true);
     }
 
@@ -583,7 +599,7 @@ if (e.type == ExoPlaybackException.TYPE_RENDERER) {
             if(player == null){
                 webView.getView().setBackgroundColor(android.R.color.transparent);
                 playerView = new PlayerView(context); 
-                player = ExoPlayerFactory.newSimpleInstance(context);
+                player = new SimpleExoPlayer.Builder(context).build();
                 playerView.setUseController(false); 
                 playerView.setPlayer(player);
                 player.setHandleAudioBecomingNoisy(true);
@@ -591,12 +607,15 @@ if (e.type == ExoPlaybackException.TYPE_RENDERER) {
                 player.setSeekParameters(SeekParameters.CLOSEST_SYNC);
                 player.setVideoScalingMode(C.VIDEO_SCALING_MODE_SCALE_TO_FIT);
                 player.addListener(eventListener);
-                player.setVideoDebugListener(videoListener);
+                player.addVideoListener(videoListener);
                 playerContainer.addView(playerView);
                 aspectRatioParams = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
                 parentView.setBackgroundColor(Color.BLACK);
             }
-            parentView.addView(playerContainer, 0, aspectRatioParams);
+            if(!viewAdded){
+                viewAdded = true;
+                parentView.addView(playerContainer, 0, aspectRatioParams);
+            }
         }
     }
 
@@ -672,7 +691,8 @@ if (e.type == ExoPlaybackException.TYPE_RENDERER) {
 			player.stop();
 			player.release();
 		}
-        if(playerContainer != null) {
+        if(viewAdded){
+            viewAdded = false;
             Log.d(TAG, "view found - removing container");
             parentView.removeView(playerContainer);
         }
@@ -702,10 +722,12 @@ if (e.type == ExoPlaybackException.TYPE_RENDERER) {
                                 .getActivity(context, mPendingIntentId, mStartActivity,
                                         PendingIntent.FLAG_CANCEL_CURRENT);
                         AlarmManager mgr = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
-                        mgr.set(AlarmManager.RTC, System.currentTimeMillis() + 100, mPendingIntent);
                         Log.i(TAG,"Killing application for cold restart");
+                        mgr.set(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + 100, mPendingIntent);
                         //kill the application
+                        //this.cordova.getActivity().finish();
                         System.exit(0);
+                        //android.os.Process.killProcess(android.os.Process.myPid());
                     } else {
                         Log.d(TAG, baseError+"StartActivity is null");
                     }
@@ -728,6 +750,7 @@ if (e.type == ExoPlaybackException.TYPE_RENDERER) {
             }
             catch (Exception e){
                 System.err.println(e);
+                Log.d("MegacuboPlayerPlugin", "setTimeout error "+ e.getMessage());
             }
         }).start();
     }
