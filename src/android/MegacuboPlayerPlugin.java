@@ -327,7 +327,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                             } else if(action.equals("mute")) {            
                                 MCMute(args.getBoolean(0));
                             } else if(action.equals("volume")) {        
-                                MCVolume(args.getInt(0) / 100);
+                                MCVolume(args.getInt(0));
                             } else if(action.equals("ratio")) {  
                                 float ratio = Float.valueOf(args.getString(0));
                                 MCRatio(ratio);
@@ -641,9 +641,12 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
         ApplyAspectRatio(ratio);
     }
 
-    private void MCVolume(float volume){
-        if(isActive){
-            player.setVolume(volume);
+    private void MCVolume(int volume){
+        if(isActive){        
+			Log.d(TAG, "VOLUME " + volume);
+			currentVolume = (float) ((float)volume / 100);
+			Log.d(TAG, "VOLUME float " + currentVolume);
+            player.setVolume(currentVolume);
         }
     }
 
@@ -729,10 +732,10 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                         System.exit(0);
                         //android.os.Process.killProcess(android.os.Process.myPid());
                     } else {
-                        Log.d(TAG, baseError+"StartActivity is null");
+                        Log.d(TAG, baseError + " StartActivity is null");
                     }
                 } else {
-                    Log.d(TAG, baseError+"PackageManager is null");
+                    Log.d(TAG, baseError + " PackageManager is null");
                 }
             } else {
                 Log.d(TAG, baseError+"Context is null");
