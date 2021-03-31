@@ -34,6 +34,9 @@ function MegacuboPlayer() {
     self.play = function(uri, mimetype, cookie, success, error) {
         exec(success, error, "tv.megacubo.player", "play", [uri, mimetype, cookie])
     }
+    self.volume = function(level) {
+        exec(success, error, "tv.megacubo.player", "volume", [level])
+    }
     self.stop = function(success, error) {
         exec(success, error, "tv.megacubo.player", "stop", [])
     }
