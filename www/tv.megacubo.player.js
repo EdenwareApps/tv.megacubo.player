@@ -32,6 +32,8 @@ function MegacuboPlayer() {
         }
     }
     self.play = function(uri, mimetype, cookie, success, error) {
+        self.currentTime = 0;
+        self.duration = 0;
         exec(success, error, "tv.megacubo.player", "play", [uri, mimetype, cookie])
     }
     self.volume = function(level, success, error) {
@@ -49,7 +51,7 @@ function MegacuboPlayer() {
     self.mute = function(success, error) {
         exec(success, error, "tv.megacubo.player", "mute", [])
     }
-    self.unMute = function(success, error) {
+    self.unmute = function(success, error) {
         exec(success, error, "tv.megacubo.player", "unMute", [])
     }
     self.restartApp = function(success, error) {
@@ -57,6 +59,9 @@ function MegacuboPlayer() {
     }
     self.getAppMetrics = function(success, error) {
         exec(success, error, "tv.megacubo.player", "getAppMetrics", [])
+    }
+    self.uiVisible = function(visible, success, error) {
+        exec(success, error, "tv.megacubo.player", "ui", [visible])
     }
     self.seek = function(to, success, error) {
         clearTimeout(self.seekTimer)
@@ -114,11 +119,9 @@ function MegacuboPlayer() {
                     self.emit('timeupdate')
                 }
             }
-            if(e.duration != self.duration){
+            if(e.duration && e.duration != self.duration){
                 self.duration = e.duration
-                if(!self.timeUpdateLocked){
-                    self.emit('durationchange')
-                }
+                self.emit('durationchange')
             }
         })
         exec(self.onTrackingEvent, function() {}, "tv.megacubo.player", "bind", [navigator.userAgent])
