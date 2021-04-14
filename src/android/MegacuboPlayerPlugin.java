@@ -154,7 +154,6 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 		});
 		
 		hasPhysicalKeys = ViewConfiguration.get(context).hasPermanentMenuKey() && KeyCharacterMap.deviceHasKey(KeyEvent.KEYCODE_BACK) && KeyCharacterMap.deviceHasKey(KeyEvent.KEYCODE_HOME);
-
         Log.d(TAG, "We were initialized");	
     }
 
@@ -238,14 +237,17 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     }
     
     public boolean hasNavigationBar(Resources resources) {
+        /*
+        config_showNavigationBar is not trusteable
         int id = resources.getIdentifier("config_showNavigationBar", "bool", "android");
         if(id > 0){
+            Log.d(TAG, "config_showNavigationBar=" + id +", "+ resources.getBoolean(id));
 			return resources.getBoolean(id);
 		} else {		
-			// !(KeyCharacterMap.deviceHasKey(KeyEvent.KEYCODE_BACK) && KeyCharacterMap.deviceHasKey(KeyEvent.KEYCODE_HOME)); returns true incorrectly on my phone
-			// https://stackoverflow.com/questions/16092431/check-for-navigation-bar
-			return !hasPhysicalKeys;
-		}
+		*/
+		// !(KeyCharacterMap.deviceHasKey(KeyEvent.KEYCODE_BACK) && KeyCharacterMap.deviceHasKey(KeyEvent.KEYCODE_HOME)); returns true incorrectly on my phone
+		// https://stackoverflow.com/questions/16092431/check-for-navigation-bar
+		return !hasPhysicalKeys;
     }
             
     public void GetAppMetrics() {
@@ -349,7 +351,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                 } else {
                     duration = offset + player.getDuration();
                 }
-                return (position < duration - 3);
+                return (position < (duration - 3));
             }
         }
         return false;
@@ -358,8 +360,9 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     public void fixStalledPlayback(){   
         if(isPlaybackStalled()){
             if(fixingStalledPlayback){
-                Log.d(TAG, "nudging currentTime by +500ms");
-                long newTime = player.getCurrentPosition() + 500;
+                long position = player.getCurrentPosition();
+                long newTime = position + 1000;
+                Log.d(TAG, "nudging currentTime by +1s, "+ position +" > "+ newTime);
                 player.seekTo(newTime);
             } else {
                 fixingStalledPlayback = true; // give a initial 500ms delay to siuation fix itself
