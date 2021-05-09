@@ -31,10 +31,10 @@ function MegacuboPlayer() {
             })
         }
     }
-    self.play = function(uri, mimetype, cookie, success, error) {
+    self.play = function(uri, mimetype, cookie, mediatype, success, error) {
         self.currentTime = 0;
         self.duration = 0;
-        exec(success, error, "tv.megacubo.player", "play", [uri, mimetype, cookie])
+        exec(success, error, "tv.megacubo.player", "play", [uri, mimetype, cookie, mediatype])
     }
     self.volume = function(level, success, error) {
         exec(success, error, "tv.megacubo.player", "volume", [level])

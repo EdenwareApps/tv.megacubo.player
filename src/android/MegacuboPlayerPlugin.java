@@ -68,6 +68,7 @@ import java.net.URL;
 import java.util.Locale;
 import java.util.HashMap;
 import java.util.List;
+import java.util.LinkedList;
 
 import java.net.CookieHandler;
 import java.net.CookieManager;
@@ -104,6 +105,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 
     private String currentPlayerState = "";
     private String currentURL = "";
+    private String currentMediatype = "";
     private String currentMimetype = "";
     private String currentCookie = "";
     private boolean viewAdded = false;
@@ -123,6 +125,8 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 	private boolean uiVisible = true;
 	private boolean hasPhysicalKeys;
     
+    private static List<Long> errorCounter = new LinkedList<Long>();
+
     @Override
     public void initialize(CordovaInterface cordova, CordovaWebView webView) {
         super.initialize(cordova, webView);
@@ -177,7 +181,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                     public void run() {
                         try {       
                             uiVisible = true;
-                            MCLoad(args.getString(0), args.getString(1), args.getString(2), callbackContext);
+                            MCLoad(args.getString(0), args.getString(1), args.getString(2), args.getString(3), callbackContext);
                         } catch (JSONException e) {
                             throw new RuntimeException(e);
                         }
@@ -336,7 +340,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     }
 
     public boolean isPlaybackStalled(){        
-        if(sendEventEnabled && isActive && currentPlayerState == "loading" && currentMimetype.toLowerCase().indexOf("mpegurl") != -1){
+        if(sendEventEnabled && isActive && currentPlayerState == "loading" && currentMediatype == "live"){
             Timeline timeline = player.getCurrentTimeline();
             long currentPosition = player.getCurrentPosition();
             long position = 0;
@@ -468,14 +472,16 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
         }
     }
 
-    private void MCLoad(String uri, String mimetype, String cookie, final CallbackContext callbackContext) {
+    private void MCLoad(String uri, String mimetype, String cookie, String mediatype, final CallbackContext callbackContext) {
         currentURL = uri;
         currentMimetype = mimetype;
+        currentMediatype = mediatype;
         currentCookie = cookie;
         
         if(playerView != null){
 			playerView.setKeepContentOnPlayerReset(false);
 		}
+        resetErrorCounter();
         MCPrepare(true);
 
         PluginResult pluginResult = new PluginResult(PluginResult.Status.NO_RESULT);
@@ -492,6 +498,21 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
         player.setMediaSource(mediaSource, resetPosition);
         player.prepare();
         player.setPlayWhenReady(true);
+    }
+    
+    private static int increaseErrorCounter(){
+        errorCounter.add(System.currentTimeMillis());
+        int length = errorCounter.size();
+        long lastSecs = System.currentTimeMillis() - 1000 * 10; // last 10 seconds
+        while(length > 0 && errorCounter.get(0) < lastSecs){
+            errorCounter.remove(0);
+            length--;
+        }
+        return length;
+    }
+    
+    private static void resetErrorCounter(){
+        errorCounter.clear();
     }
 
     private void initMegacuboPlayer() {
@@ -558,7 +579,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 
 					@Override
 					public void onPlayerError(ExoPlaybackException error) {
-						String what;
+                        String what;
 						String errStr = error.toString();
 						switch (error.type) {
 							case ExoPlaybackException.TYPE_SOURCE:
@@ -573,9 +594,16 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 							default:
 								what = "Unknown error: " + errStr;
 						}
+						int errorCount = increaseErrorCounter();
+                        if(errorCount >= 3){
+							Log.e(TAG, "*onPlayerError (fatal, "+ errorCount +" errors) " + errStr +" "+ what);
+							sendEvent("error", "ExoPlayer error " + what, false);
+							MCStop();
+                            return;
+                        }
 						String errStack = Log.getStackTraceString(error); 
 						String errorFullStr = errStr + " " + what + " " + errStack;
-						if(
+                        if(
 						errorFullStr.indexOf("PlaylistStuck") != -1 || 
 						errorFullStr.indexOf("BehindLiveWindow") != -1 || 
 						errorFullStr.indexOf("Most likely not a Transport Stream") != -1 ||
@@ -587,7 +615,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 							sendEventEnabled = false;
 							playerView.setKeepContentOnPlayerReset(true);
 							
-							boolean resetTime = currentMimetype.toLowerCase().indexOf("mpegurl") != -1;
+							boolean resetTime = currentMediatype == "live";
 							if(player != null){
 								player.setPlayWhenReady(false);
 								if(resetTime){
