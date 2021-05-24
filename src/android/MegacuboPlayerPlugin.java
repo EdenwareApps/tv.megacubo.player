@@ -66,6 +66,7 @@ import org.json.JSONObject;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.Locale;
+import java.util.Map;
 import java.util.HashMap;
 import java.util.List;
 import java.util.LinkedList;
@@ -110,12 +111,13 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     private String currentCookie = "";
     private boolean viewAdded = false;
     private boolean sendEventEnabled = true;
-    private boolean fixingStalledPlayback = false;
     private long lastVideoTime = -1;
+    private long videoLoadingSince = -1;
     private int videoWidth = 1280;
     private int videoHeight = 720;
     private int videoForcedWidth = 1280;
     private int videoForcedHeight = 720;
+	private int hlsMinPlaylistWindowTime = 6;
     private float videoForcedRatio = 1.7777777777777777f; // 16:9
 
 	private String TAG = "MegacuboPlayerPlugin";
@@ -140,7 +142,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 					cordova.getActivity().runOnUiThread(new Runnable() {
 						@Override
 						public void run() {
-							GetTimeData(false);
+							SendTimeData(false);
 						}
 					});
 					handler.postDelayed(timer, 1000);
@@ -218,7 +220,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                             } else if(action.equals("ui")) {            
                                 uiVisible = args.getBoolean(0);
                                 if(uiVisible){
-									GetTimeData(true);
+									SendTimeData(true);
 									if(isPlaying){
 										handler.postDelayed(timer, 0);
 									}
@@ -304,105 +306,130 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 
     public void Seek(long to){ // TODO, on live streams, we're unable to seek back too much, why?!        
         if(isActive){
-            boolean debug = true;
-            Timeline timeline = player.getCurrentTimeline();
-            int currentWindowIndex = player.getCurrentWindowIndex();
-            long offset = player.getCurrentPosition();
-            long position;
-            long currentPosition = player.getCurrentPosition();
-            if (timeline != null) {
-                offset = (timeline.getPeriod(player.getCurrentPeriodIndex(), period).getPositionInWindowMs() * -1);
-                position = offset + currentPosition;
-
-                if(debug){
-                    Log.d(TAG, "SEEK DEBUG " + to + " :: " + offset);
-                }
-
-                if(to < offset){
-                    to = 0; // zero after offset
-                } else {
-                    to = to - offset;
-                }
-
-                if(debug){
-                    Log.d(TAG, "SEEKTO " + to + " " + currentPosition);
-                }
-
-                player.seekTo(to);
-
-                if(debug){
-                    Log.d(TAG, "SEEKED " + to + " " + player.getCurrentPosition());
-                }
-
-                GetTimeData(true);
-            }
+			Map<String, Long> data = GetTimeData();
+			long duration = data.get("duration");
+			long position = data.get("position");
+			long offset = data.get("offset");
+			long minTo = currentMediatype.equals("live") ? (duration + offset) : 0;
+			//Log.d(TAG, "seeking to " + to + "s, " + minTo + ", " + player.getCurrentPosition() + ", "+ position + ", "+ offset + ", " + duration);
+			if(to < minTo){
+				to = minTo;
+			}
+			player.seekTo((int)to + offset);
+			data = GetTimeData();
+			//Log.d(TAG, "seeking to " + player.getCurrentPosition() + ", " + data.get("position"));
+			SendTimeData(true);
         }
     }
 
-    public boolean isPlaybackStalled(){        
-        if(sendEventEnabled && isActive && currentPlayerState == "loading" && currentMediatype == "live"){
-            Timeline timeline = player.getCurrentTimeline();
-            long currentPosition = player.getCurrentPosition();
-            long position = 0;
-            long duration = 0;
-            long offset = 0;
-            
-            if (!timeline.isEmpty()) {
-                offset = (timeline.getPeriod(player.getCurrentPeriodIndex(), period).getPositionInWindowMs() * -1);
-                position = offset + currentPosition;
-                if(player.isCurrentWindowLive()){
-                    duration = offset + currentPosition + player.getTotalBufferedDuration();
-                } else {
-                    duration = offset + player.getDuration();
-                }
-                return (position < (duration - 3));
-            }
+    public boolean isPlaybackStalled(){
+		if(isActive && currentPlayerState.equals("loading") && currentMediatype.equals("live")){
+			long now = System.currentTimeMillis();
+			long elapsed = (now - videoLoadingSince) / 1000;
+			if(elapsed < 5){
+				//Log.d(TAG, "isPlaybackStalled NO loading for less than " + elapsed + " seconds");
+			} else {
+				int remainingTime = GetRemainingTime();
+				//Log.d(TAG, "isPlaybackStalled MAYBE " + remainingTime);
+				return remainingTime > hlsMinPlaylistWindowTime;
+			}
+        } else {			
+			//Log.d(TAG, "isPlaybackStalled NO " + isActive + " | " + currentPlayerState + " | " + currentMediatype);
         }
         return false;
     }
 
     public void fixStalledPlayback(){   
         if(isPlaybackStalled()){
-            if(fixingStalledPlayback){
-                long position = player.getCurrentPosition();
-                long newTime = position + 1000;
-                Log.d(TAG, "nudging currentTime by +1s, "+ position +" > "+ newTime);
-                player.seekTo(newTime);
-            } else {
-                fixingStalledPlayback = true; // give a initial 500ms delay to siuation fix itself
+			long now = System.currentTimeMillis();
+			long elapsed = (now - videoLoadingSince) / 1000;
+			if(elapsed < 5){
+				//Log.d(TAG, "Playback seems stalled for "+ elapsed + "s");
+				setTimeout(() -> {                            
+					cordova.getActivity().runOnUiThread(new Runnable() {
+						@Override
+						public void run() {
+							fixStalledPlayback();
+						}
+					});
+				}, (5 - (int)elapsed * 1000));
+			} else {
+				videoLoadingSince = now;
+				Map<String, Long> data = GetTimeData();
+				long duration = data.get("duration");
+				long position = data.get("position");
+				int remainingTime = ((int) (duration - position)) / 1000;
+				//Log.d(TAG, "Playback seems stalled for "+ elapsed + "s, remainingTime: " + remainingTime + "s");
+				if(remainingTime > hlsMinPlaylistWindowTime){
+					long offset = data.get("offset");
+					int nudgeSecs = (remainingTime - hlsMinPlaylistWindowTime) / 10;
+					int nudgeMs = nudgeSecs * 1000;
+					Log.d(TAG, "nudging currentTime by +" + nudgeSecs + "s, " + player.getCurrentPosition() + ", "+ position + ", "+ offset);
+					player.seekTo(((int)position + offset) + nudgeMs);
+					Log.d(TAG, "nudged currentTime " + player.getCurrentPosition());
+				}
+				setTimeout(() -> {                            
+					cordova.getActivity().runOnUiThread(new Runnable() {
+						@Override
+						public void run() {
+							fixStalledPlayback();
+						}
+					});
+				}, 5000);
             }
-            setTimeout(() -> {                            
-                cordova.getActivity().runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        fixStalledPlayback();
-                    }
-                });
-            }, 500);
         } else {
-            fixingStalledPlayback = false;
+			//Log.d(TAG, "Playback doesn't seems stalled");
+			if(currentPlayerState.equals("loading")){
+				setTimeout(() -> {                            
+					cordova.getActivity().runOnUiThread(new Runnable() {
+						@Override
+						public void run() {
+							fixStalledPlayback();
+						}
+					});
+				}, 5000);
+			}
+        }
+    }
+    
+    public Map<String, Long> GetTimeData(){
+		Map<String, Long> m = new HashMap<String, Long>();
+		long currentPosition = player.getCurrentPosition(); 
+		long duration = 0;          
+		long offset = 0;          
+		if(currentMediatype.equals("live")){
+			Timeline timeline = player.getCurrentTimeline(); 
+			if (!timeline.isEmpty()) {
+				offset = timeline.getPeriod(player.getCurrentPeriodIndex(), period).getPositionInWindowMs();
+				currentPosition -= offset;	
+			}
+			duration = currentPosition + player.getTotalBufferedDuration();
+		} else {
+			duration = player.getDuration();
+		}
+		lastVideoTime = currentPosition;
+		m.put("position", currentPosition);
+		m.put("duration", duration);
+		m.put("offset", offset);
+		return m;
+	}
+
+    public void SendTimeData(boolean force){        
+        if(isActive && sendEventEnabled){
+            Map<String, Long> data = GetTimeData();
+			sendEvent("time", "{\"currentTime\":" + data.get("position") + ",\"duration\":" + data.get("duration") + "}", false);
         }
     }
 
-    public void GetTimeData(boolean force){        
-        if(isActive && sendEventEnabled){
-            Timeline timeline = player.getCurrentTimeline();            
-            if (!timeline.isEmpty()) {
-				long currentPosition = player.getCurrentPosition();
-				long offset = (timeline.getPeriod(player.getCurrentPeriodIndex(), period).getPositionInWindowMs() * -1);
-                long time = offset + currentPosition;
-				
-                if(force || time != lastVideoTime){
-					long duration = 0;
-					lastVideoTime = time;
-					if(player.isCurrentWindowLive()){
-						duration = offset + currentPosition + player.getTotalBufferedDuration();
-					} else {
-						duration = offset + player.getDuration();
-					}
-					sendEvent("time", "{\"currentTime\":" + time + ",\"duration\":" + duration + "}", false);
-				}
-            }
+    public int GetRemainingTime(){
+        if(isActive){
+            Map<String, Long> data = GetTimeData();
+			long duration = data.get("duration");
+			long position = data.get("position");
+			//Log.d(TAG, "GetRemainingTime " + duration + " | "+ position + " | "+ (int)(duration - position));
+			return (int)(duration - position) / 1000;
+        } else {
+			return 0;
         }
     }
 
@@ -560,10 +587,18 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 									break;
 							}
 						}
+						if(state.equals("loading")){
+							videoLoadingSince = System.currentTimeMillis();
+						}
 						currentPlayerState = state;
 						sendEvent("state", state, false);
-						if(playWhenReady && !fixingStalledPlayback && isPlaybackStalled()){
-							fixStalledPlayback();
+						if(playWhenReady){
+							cordova.getActivity().runOnUiThread(new Runnable() {
+								@Override
+								public void run() {
+									fixStalledPlayback();
+								}
+							});
 						}
 					}
 
@@ -596,7 +631,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 						}
 						int errorCount = increaseErrorCounter();
                         if(errorCount >= 3){
-							Log.e(TAG, "*onPlayerError (fatal, "+ errorCount +" errors) " + errStr +" "+ what);
+							Log.e(TAG, "onPlayerError (fatal, "+ errorCount +" errors) " + errStr +" "+ what);
 							sendEvent("error", "ExoPlayer error " + what, false);
 							MCStop();
                             return;
@@ -607,15 +642,16 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 						errorFullStr.indexOf("PlaylistStuck") != -1 || 
 						errorFullStr.indexOf("BehindLiveWindow") != -1 || 
 						errorFullStr.indexOf("Most likely not a Transport Stream") != -1 ||
-						errorFullStr.indexOf("PlaylistResetException") != -1
+						errorFullStr.indexOf("PlaylistResetException") != -1 || 
+						errorFullStr.indexOf("Unable to connect") != -1 
 						){
 							sendEvent("state", "loading", false);
-							GetTimeData(true); // send last valid data to ui
+							SendTimeData(true); // send last valid data to ui
 							
 							sendEventEnabled = false;
 							playerView.setKeepContentOnPlayerReset(true);
 							
-							boolean resetTime = currentMediatype == "live";
+							boolean resetTime = currentMediatype.equals("live");
 							if(player != null){
 								player.setPlayWhenReady(false);
 								if(resetTime){
@@ -625,18 +661,25 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 							MCPrepare(resetTime);
 							setTimeout(() -> {            
 								sendEventEnabled = true;
-								if(currentPlayerState != "loading"){
+								if(currentPlayerState.equals("loading")){
+									cordova.getActivity().runOnUiThread(new Runnable() {
+										@Override
+										public void run() {
+											fixStalledPlayback();
+										}
+									});
+								} else {
 									sendEvent("state", currentPlayerState, false);
 								}
 							}, 100);
-							Log.e(TAG, "*onPlayerError (auto-recovering) " + errStr + " " + what);
+							Log.e(TAG, "onPlayerError (auto-recovering) " + errStr + " " + what + " " + resetTime);
 						} else if(
 						errorFullStr.indexOf("Renderer error") != -1 || 
 						errorFullStr.indexOf("InvalidResponseCode") != -1
 						) {
 							
 							sendEvent("state", "loading", false);
-							GetTimeData(true); // send last valid data to ui
+							SendTimeData(true); // send last valid data to ui
 							
 							sendEventEnabled = false;
 							playerView.setKeepContentOnPlayerReset(true);
@@ -644,7 +687,14 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 							player.retry();
 							setTimeout(() -> {            
 								sendEventEnabled = true;
-								if(currentPlayerState != "loading"){
+								if(currentPlayerState.equals("loading")){
+									cordova.getActivity().runOnUiThread(new Runnable() {
+										@Override
+										public void run() {
+											fixStalledPlayback();
+										}
+									});
+								} else {
 									sendEvent("state", currentPlayerState, false);
 								}
 							}, 100);
@@ -717,9 +767,9 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 
     private void MCVolume(int volume){
         if(isActive){        
-			Log.d(TAG, "VOLUME " + volume);
+			//Log.d(TAG, "VOLUME " + volume);
 			currentVolume = (float) ((float)volume / 100);
-			Log.d(TAG, "VOLUME float " + currentVolume);
+			//Log.d(TAG, "VOLUME float " + currentVolume);
             player.setVolume(currentVolume);
         }
     }
@@ -746,7 +796,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 
     private void MCResume() {        
         if(isActive){
-            if(currentPlayerState == "ended"){
+            if(currentPlayerState.equals("ended")){
                 player.seekTo(0);
             }
             player.setPlayWhenReady(true);
