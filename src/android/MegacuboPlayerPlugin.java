@@ -108,8 +108,6 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     private String currentMediatype = "";
     private String currentMimetype = "";
     private String currentCookie = "";
-    private long currentPlaybackStartedAt = 0;
-    private long currentPlaybackStartedAtPosition = 0;
     private float currentPlaybackRate = 1;
     private boolean viewAdded = false;
     private boolean sendEventEnabled = true;
@@ -311,14 +309,13 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 			if(data == null){
 				data = GetTimeData();
 			}
-			long bufferedDuration = data.get("bufferedDuration");
 			long duration = data.get("duration");
 			long position = data.get("position");
 			long offset = data.get("offset");
 			Log.d(TAG, "seeking to " + to + "ms, " + player.getCurrentPosition() + ", "+ position + ", "+ offset + ", " + duration);
 			if(currentMediatype.equals("live")){
 				long rawPos = data.get("rawPosition");				
-				long maxPos = rawPos + (bufferedDuration - position); // beyound that, use TIME_UNSET
+				long maxPos = rawPos + (duration - position); // beyound that, use TIME_UNSET
 				long diff = to - position;
 				to = rawPos + diff;
 				if(to < offset){
@@ -421,28 +418,20 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 		long currentPosition = rawPosition; 
 		long duration = 0;         
 		long offset = 0;
-		long bufferedDuration = 0;
 		if(currentMediatype.equals("live")){
 			Timeline timeline = player.getCurrentTimeline(); 
 			if (!timeline.isEmpty()) {
 				offset = timeline.getPeriod(player.getCurrentPeriodIndex(), period).getPositionInWindowMs();
 				currentPosition -= offset;	
 			}
-			bufferedDuration = currentPosition + player.getTotalBufferedDuration();
-			if(currentPlaybackStartedAt > 0){
-				long now = System.currentTimeMillis();
-				duration = (now - currentPlaybackStartedAt) + currentPlaybackStartedAtPosition;
-			} else {
-				duration = bufferedDuration;
-			}
+			duration = currentPosition + player.getTotalBufferedDuration();
 		} else {
-			bufferedDuration = duration = player.getDuration();
+			duration = player.getDuration();
 		}
 		if(duration < currentPosition){
 			duration = currentPosition;
 		}
 		lastVideoTime = currentPosition;
-		m.put("bufferedDuration", bufferedDuration);
 		m.put("rawPosition", rawPosition);
 		m.put("position", currentPosition);
 		m.put("duration", duration);
@@ -570,11 +559,15 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 
     private void MCPrepare(boolean resetPosition) {
 		currentPlaybackRate = 1;
-		currentPlaybackStartedAt = 0;
         initMegacuboPlayer();
         // player!!.audioAttributes = AudioAttributes.Builder().setFlags(C.FLAG_AUDIBILITY_ENFORCED).setUsage(C.USAGE_NOTIFICATION_RINGTONE).setContentType(C.CONTENT_TYPE_SPEECH).build()
         MediaSource mediaSource = getMediaSource(currentURL, currentMimetype, currentCookie);
-        player.setMediaSource(mediaSource, resetPosition);
+        if(resetPosition == true){
+			long startFromZero = 0;
+			player.setMediaSource(mediaSource, startFromZero);
+		} else {
+			player.setMediaSource(mediaSource, false);
+		}
         player.prepare();
         player.setPlayWhenReady(true);
     }
@@ -623,15 +616,6 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 									break;
 								case Player.STATE_READY: // able to immediately play from its current position.
 									state = "playing";
-									if(currentPlaybackStartedAt == 0){
-										cordova.getActivity().runOnUiThread(new Runnable() {
-											@Override
-											public void run() {
-												currentPlaybackStartedAt = System.currentTimeMillis();
-												currentPlaybackStartedAtPosition = player.getCurrentPosition();
-											}
-										});
-									}
 									MCPlaybackRate(currentPlaybackRate);
 									break;
 							}
@@ -674,9 +658,10 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 
 					@Override
 					public void onPlayerError(ExoPlaybackException error) {
-						currentPlaybackStartedAt = 0;
+						Map<String, Long> data = GetTimeData();
                         String what;
 						String errStr = error.toString();
+						String playbackPosition = data.get("position") +"-"+ data.get("duration");
 						boolean isLive = currentMediatype.equals("live");
 						switch (error.type) {
 							case ExoPlaybackException.TYPE_SOURCE:
@@ -693,33 +678,20 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 						}
 						int errorCount = increaseErrorCounter();
                         if(errorCount >= 3){
-							Log.e(TAG, "onPlayerError (fatal, "+ errorCount +" errors) " + errStr +" "+ what);
+							Log.e(TAG, "onPlayerError (fatal, "+ errorCount +" errors) " + errStr +" "+ what +" "+ playbackPosition);
 							sendEvent("error", "ExoPlayer error " + what, false);
 							MCStop();
                             return;
                         }
 						String errStack = Log.getStackTraceString(error); 
 						String errorFullStr = errStr + " " + what + " " + errStack;
-						if(isLive && errorFullStr.indexOf("Response code: 404") != -1){
-							sendEvent("state", "loading", false);
-							SendTimeData(true); // send last valid data to ui
-							sendEventEnabled = false;
-							playerView.setKeepContentOnPlayerReset(true);
-							player.seekTo(C.TIME_UNSET);
-							player.retry();
-							setTimeout(() -> {
-								sendEventEnabled = true;
-								if(!currentPlayerState.equals("loading")){
-									sendEvent("state", currentPlayerState, false);
-								}
-							}, 100);
-							Log.e(TAG, "onPlayerError (back to live) " + errStr + " " + what);
-						} else if(isLive && ( 
+						if(isLive && ( 
 							errorFullStr.indexOf("PlaylistStuck") != -1 || 
 							errorFullStr.indexOf("BehindLiveWindow") != -1 || 
 							errorFullStr.indexOf("Most likely not a Transport Stream") != -1 ||
 							errorFullStr.indexOf("PlaylistResetException") != -1 || 
-							errorFullStr.indexOf("Unable to connect") != -1 
+							errorFullStr.indexOf("Unable to connect") != -1 || 
+							errorFullStr.indexOf("Response code: 404") != -1
 						)){
 							sendEvent("state", "loading", false);
 							SendTimeData(true); // send last valid data to ui
@@ -748,7 +720,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 									sendEvent("state", currentPlayerState, false);
 								}
 							}, 100);
-							Log.e(TAG, "onPlayerError (auto-recovering) " + errStr + " " + what + " " + resetTime);
+							Log.e(TAG, "onPlayerError (auto-recovering) " + errStr + " " + what + " " + resetTime +" "+ playbackPosition);
 						} else if(!isLive || (
 							errorFullStr.indexOf("Renderer error") != -1 || 
 							errorFullStr.indexOf("InvalidResponseCode") != -1
@@ -774,9 +746,9 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 									sendEvent("state", currentPlayerState, false);
 								}
 							}, 100);
-							Log.e(TAG, "*onPlayerError (auto-recovering) " + errStr + " " + what);
+							Log.e(TAG, "*onPlayerError (auto-recovering) " + errStr + " " + what +" "+ playbackPosition);
 						} else {
-							Log.e(TAG, "*onPlayerError (fatal) " + errStr +" "+ what);
+							Log.e(TAG, "*onPlayerError (fatal) " + errStr +" "+ what +" "+ playbackPosition);
 							sendEvent("error", "ExoPlayer error " + what, false);
 							MCStop();
 						}
