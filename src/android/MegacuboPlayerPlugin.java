@@ -425,6 +425,10 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 				currentPosition -= offset;	
 			}
 			duration = currentPosition + player.getTotalBufferedDuration();
+			long pduration = player.getDuration();
+			if(pduration > duration){
+				duration = pduration;
+			}
 		} else {
 			duration = player.getDuration();
 		}
