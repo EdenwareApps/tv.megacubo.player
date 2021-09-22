@@ -1,6 +1,7 @@
 package tv.megacubo.player;
 
 import android.net.Uri;
+import android.app.Activity;
 import android.app.ActivityManager;
 import android.graphics.Point;
 import android.graphics.Color;
@@ -125,7 +126,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 	private Runnable timer;
 	private Handler handler;
 	private boolean uiVisible = true;
-	private boolean hasPhysicalKeys;
+	private boolean hasPermanentKeys;
     
     private static List<Long> errorCounter = new LinkedList<Long>();
 
@@ -159,9 +160,49 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 			}
 		});
 		
-		hasPhysicalKeys = ViewConfiguration.get(context).hasPermanentMenuKey() && KeyCharacterMap.deviceHasKey(KeyEvent.KEYCODE_BACK) && KeyCharacterMap.deviceHasKey(KeyEvent.KEYCODE_HOME);
-        Log.d(TAG, "We were initialized");	
+		hasPermanentKeys = checkHasPermanentKeys();
+        Log.d(TAG, "We're initialized.");	
     }
+    
+    public boolean checkHasPermanentKeys() {
+		// ViewConfiguration.get(context).hasPermanentMenuKey()
+    
+        Resources resources = context.getResources();
+        int snb = resources.getIdentifier("config_showNavigationBar", "bool", "android");
+        boolean snbb = resources.getBoolean(snb);
+        if(!snbb){
+			return true;
+        }
+        
+		int height = 0;
+		int realHeight = 0;
+		Activity activity = cordova.getActivity();
+
+		WindowManager w = activity.getWindowManager();
+		Display d = w.getDefaultDisplay();
+		DisplayMetrics metrics = new DisplayMetrics();
+		d.getMetrics(metrics);
+		height = metrics.heightPixels;
+
+		if (Build.VERSION.SDK_INT >= 14 && Build.VERSION.SDK_INT < 17){ // includes window decorations (statusbar bar/menu bar)
+			try {
+				realHeight = (Integer) Display.class.getMethod("getRawHeight").invoke(d);
+			} catch (Exception ignored) { }
+		}
+		if (Build.VERSION.SDK_INT >= 17){ // includes window decorations (statusbar bar/menu bar)
+			try {
+				Point realSize = new Point();
+				Display.class.getMethod("getRealSize", Point.class).invoke(d, realSize);
+				realHeight = realSize.y;
+			} catch (Exception ignored) { }
+		}
+		if(height == realHeight){
+			return true;
+		}
+		else{
+			return false;
+		}
+	}
 
     @Override
     public boolean execute(String action, JSONArray args, CallbackContext callbackContext) throws JSONException {
@@ -253,7 +294,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 		*/
 		// !(KeyCharacterMap.deviceHasKey(KeyEvent.KEYCODE_BACK) && KeyCharacterMap.deviceHasKey(KeyEvent.KEYCODE_HOME)); returns true incorrectly on my phone
 		// https://stackoverflow.com/questions/16092431/check-for-navigation-bar
-		return !hasPhysicalKeys;
+		return !hasPermanentKeys;
     }
             
     public void GetAppMetrics() {
