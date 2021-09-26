@@ -171,9 +171,12 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
         int snb = resources.getIdentifier("config_showNavigationBar", "bool", "android");
         boolean snbb = resources.getBoolean(snb);
         if(!snbb){
-			return true;
+			Log.d(TAG, "checkHasPermanentKeys(): config_showNavigationBar=false");	
+			//return true;
         }
         
+		int width = 0;
+		int realWidth = 0;
 		int height = 0;
 		int realHeight = 0;
 		Activity activity = cordova.getActivity();
@@ -182,11 +185,13 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 		Display d = w.getDefaultDisplay();
 		DisplayMetrics metrics = new DisplayMetrics();
 		d.getMetrics(metrics);
+		width = metrics.widthPixels;
 		height = metrics.heightPixels;
 
 		if (Build.VERSION.SDK_INT >= 14 && Build.VERSION.SDK_INT < 17){ // includes window decorations (statusbar bar/menu bar)
 			try {
 				realHeight = (Integer) Display.class.getMethod("getRawHeight").invoke(d);
+				realWidth = (Integer) Display.class.getMethod("getRawWidth").invoke(d);
 			} catch (Exception ignored) { }
 		}
 		if (Build.VERSION.SDK_INT >= 17){ // includes window decorations (statusbar bar/menu bar)
@@ -194,9 +199,12 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 				Point realSize = new Point();
 				Display.class.getMethod("getRealSize", Point.class).invoke(d, realSize);
 				realHeight = realSize.y;
+				realWidth = realSize.x;
 			} catch (Exception ignored) { }
 		}
-		if(height == realHeight){
+		Log.d(TAG, "checkHasPermanentKeys(): "+ Boolean.toString(ViewConfiguration.get(context).hasPermanentMenuKey()) +", "+ Boolean.toString(KeyCharacterMap.deviceHasKey(KeyEvent.KEYCODE_BACK)) +", "+ Boolean.toString(KeyCharacterMap.deviceHasKey(KeyEvent.KEYCODE_HOME)));        
+		Log.d(TAG, "checkHasPermanentKeys(): "+ height +" == "+ realHeight +", "+ width +" == "+ realWidth);
+		if(height == realHeight && width == realWidth){
 			return true;
 		}
 		else{
