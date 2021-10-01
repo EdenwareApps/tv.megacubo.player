@@ -60,6 +60,9 @@ function MegacuboPlayer() {
     self.getAppMetrics = function(success, error) {
         exec(success, error, "tv.megacubo.player", "getAppMetrics", [])
     }
+    self.getNetworkIp = function(success, error) {
+        exec(success, error, "tv.megacubo.player", "getNetworkIp", [])
+    }
     self.uiVisible = function(visible, success, error) {
         exec(success, error, "tv.megacubo.player", "ui", [visible])
     }
@@ -107,6 +110,10 @@ function MegacuboPlayer() {
             self.appMetrics = e
             self.emit('appmetrics', e)
         })
+        self.on('networkIp', e => {
+            self.networkIp = e
+            self.emit('network-ip', e)
+        })
         self.on('time', e => {
             e.currentTime = e.currentTime / 1000;
             e.duration = e.duration / 1000;
@@ -125,7 +132,7 @@ function MegacuboPlayer() {
             }
         })
         exec(self.onTrackingEvent, function() {}, "tv.megacubo.player", "bind", [navigator.userAgent])
-        exec(() => {}, console.error, "tv.megacubo.player", "getAppMetrics", [])
+        self.getAppMetrics(() => {}, console.error)
     }
     self.init()
 }

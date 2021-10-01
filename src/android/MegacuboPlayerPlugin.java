@@ -1,6 +1,9 @@
 package tv.megacubo.player;
 
 import android.net.Uri;
+import android.net.NetworkInfo;
+import android.net.ConnectivityManager;
+import android.net.wifi.WifiManager;
 import android.app.Activity;
 import android.app.ActivityManager;
 import android.graphics.Point;
@@ -65,6 +68,10 @@ import org.json.JSONObject;
 
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.util.Enumeration;
+import java.net.NetworkInterface;
+import java.net.Inet4Address;
+import java.net.InetAddress;
 import java.util.Locale;
 import java.util.Map;
 import java.util.HashMap;
@@ -240,6 +247,8 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                 });
             } else if(action.equals("getAppMetrics")) { 
                 GetAppMetrics();
+            } else if(action.equals("getNetworkIp")) { 
+				sendEvent("networkIp", "\""+ getDeviceIpAddress() +"\"", true);
             } else if(action.equals("restart")) {
                 MCRestartApp();
             } else if(isActive) {                
@@ -303,6 +312,50 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 		// !(KeyCharacterMap.deviceHasKey(KeyEvent.KEYCODE_BACK) && KeyCharacterMap.deviceHasKey(KeyEvent.KEYCODE_HOME)); returns true incorrectly on my phone
 		// https://stackoverflow.com/questions/16092431/check-for-navigation-bar
 		return !hasPermanentKeys;
+    }
+    
+    private String getDeviceIpAddress() {
+        String actualConnectedToNetwork = "";
+        ConnectivityManager connManager = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (connManager != null) {
+            NetworkInfo mWifi = connManager.getNetworkInfo(ConnectivityManager.TYPE_WIFI);
+            if (mWifi.isConnected()) {
+                actualConnectedToNetwork = getWifiIp();
+            }
+        }
+        if (actualConnectedToNetwork != "") {
+            actualConnectedToNetwork = getNetworkInterfaceIpAddress();
+        }
+        return actualConnectedToNetwork;
+    }
+
+    private String getWifiIp() {
+        final WifiManager mWifiManager = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
+        if (mWifiManager != null && mWifiManager.isWifiEnabled()) {
+            int ip = mWifiManager.getConnectionInfo().getIpAddress();
+            return (ip & 0xFF) + "." + ((ip >> 8) & 0xFF) + "." + ((ip >> 16) & 0xFF) +"."+ ((ip >> 24) & 0xFF);
+        }
+        return "";
+    }
+
+    public String getNetworkInterfaceIpAddress() {
+        try {
+            for (Enumeration<NetworkInterface> en = NetworkInterface.getNetworkInterfaces(); en.hasMoreElements(); ) {
+                NetworkInterface networkInterface = en.nextElement();
+                for (Enumeration<InetAddress> enumIpAddr = networkInterface.getInetAddresses(); enumIpAddr.hasMoreElements(); ) {
+                    InetAddress inetAddress = enumIpAddr.nextElement();
+                    if (!inetAddress.isLoopbackAddress() && inetAddress instanceof Inet4Address) {
+                        String host = inetAddress.getHostAddress();
+                        if (host != null) {
+                            return host;
+                        }
+                    }
+                }
+            }
+        } catch (Exception ex) {
+            Log.e(TAG, "getLocalIpAddress", ex);
+        }
+        return "";
     }
             
     public void GetAppMetrics() {
