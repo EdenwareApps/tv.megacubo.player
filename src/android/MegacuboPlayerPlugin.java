@@ -66,9 +66,12 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.math.BigInteger;
+import java.nio.ByteOrder;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.Enumeration;
+import java.net.UnknownHostException;
 import java.net.NetworkInterface;
 import java.net.Inet4Address;
 import java.net.InetAddress;
@@ -321,22 +324,41 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
             NetworkInfo mWifi = connManager.getNetworkInfo(ConnectivityManager.TYPE_WIFI);
             if (mWifi.isConnected()) {
                 actualConnectedToNetwork = getWifiIp();
+            } else {
+				Log.e(TAG, "wifi not connected");            
             }
+        } else {
+			Log.e(TAG, "connManager unavailable");
+            actualConnectedToNetwork = getWifiIp();
         }
-        if (actualConnectedToNetwork != "") {
+        if (actualConnectedToNetwork == "") {
             actualConnectedToNetwork = getNetworkInterfaceIpAddress();
         }
         return actualConnectedToNetwork;
     }
-
-    private String getWifiIp() {
-        final WifiManager mWifiManager = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
-        if (mWifiManager != null && mWifiManager.isWifiEnabled()) {
-            int ip = mWifiManager.getConnectionInfo().getIpAddress();
-            return (ip & 0xFF) + "." + ((ip >> 8) & 0xFF) + "." + ((ip >> 16) & 0xFF) +"."+ ((ip >> 24) & 0xFF);
-        }
-        return "";
-    }
+    
+    protected String getWifiIp() {
+		String host = "";
+		WifiManager wifiManager = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
+		if (wifiManager != null && wifiManager.isWifiEnabled()) {
+			int ipAddress = wifiManager.getConnectionInfo().getIpAddress();
+			// Convert little-endian to big-endianif needed
+			if (ByteOrder.nativeOrder().equals(ByteOrder.LITTLE_ENDIAN)) {
+				ipAddress = Integer.reverseBytes(ipAddress);
+			}
+			byte[] ipByteArray = BigInteger.valueOf(ipAddress).toByteArray();
+			try {
+				host = InetAddress.getByAddress(ipByteArray).getHostAddress();
+				if(isIPv4NetworkIP(host)){
+					Log.e(TAG, "getWifiIp() "+ host);
+					return host;
+				}
+			} catch (UnknownHostException ex) {
+				Log.e(TAG, "getWifiIp() Unable to get host address.", ex);
+			}
+		}
+		return "";
+	}
 
     public String getNetworkInterfaceIpAddress() {
         try {
@@ -346,8 +368,11 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                     InetAddress inetAddress = enumIpAddr.nextElement();
                     if (!inetAddress.isLoopbackAddress() && inetAddress instanceof Inet4Address) {
                         String host = inetAddress.getHostAddress();
-                        if (host != null) {
-                            return host;
+                        if (host != null){
+							Log.e(TAG, "getLocalIpAddress() "+ host);
+							if(isIPv4NetworkIP(host)) {
+								return host;
+							}
                         }
                     }
                 }
@@ -356,6 +381,15 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
             Log.e(TAG, "getLocalIpAddress", ex);
         }
         return "";
+    }
+    
+    public boolean isIPv4NetworkIP(String addr) {
+        if(addr != null){
+			if(addr.indexOf("10.") == 0 || addr.indexOf("172.") == 0 || addr.indexOf("192.") == 0){
+				return true;
+			}
+		}
+		return false;
     }
             
     public void GetAppMetrics() {
@@ -676,6 +710,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 		}
         player.prepare();
         player.setPlayWhenReady(true);
+        webView.getView().setBackgroundColor(android.R.color.transparent);
     }
     
     private static int increaseErrorCounter(){
@@ -873,7 +908,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 			};
 			
             if(player == null){
-                webView.getView().setBackgroundColor(android.R.color.transparent);
+				webView.getView().setBackgroundColor(android.R.color.transparent);
                 playerView = new PlayerView(context); 
                 player = new SimpleExoPlayer.Builder(context).build();
                 playerView.setUseController(false); 
