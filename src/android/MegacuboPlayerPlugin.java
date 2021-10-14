@@ -251,7 +251,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
             } else if(action.equals("getAppMetrics")) { 
                 GetAppMetrics();
             } else if(action.equals("getNetworkIp")) { 
-				sendEvent("networkIp", "\""+ getDeviceIpAddress() +"\"", true);
+				sendEvent("networkIp", "\""+ getWifiIp() +"\"", true);
             } else if(action.equals("restart")) {
                 MCRestartApp();
             } else if(isActive) {                
@@ -316,72 +316,29 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 		// https://stackoverflow.com/questions/16092431/check-for-navigation-bar
 		return !hasPermanentKeys;
     }
-    
-    private String getDeviceIpAddress() {
-        String actualConnectedToNetwork = "";
-        ConnectivityManager connManager = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
-        if (connManager != null) {
-            NetworkInfo mWifi = connManager.getNetworkInfo(ConnectivityManager.TYPE_WIFI);
-            if (mWifi.isConnected()) {
-                actualConnectedToNetwork = getWifiIp();
-            } else {
-				Log.e(TAG, "wifi not connected");            
-            }
-        } else {
-			Log.e(TAG, "connManager unavailable");
-            actualConnectedToNetwork = getWifiIp();
-        }
-        if (actualConnectedToNetwork == "") {
-            actualConnectedToNetwork = getNetworkInterfaceIpAddress();
-        }
-        return actualConnectedToNetwork;
-    }
-    
+        
     protected String getWifiIp() {
 		String host = "";
-		WifiManager wifiManager = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
-		if (wifiManager != null && wifiManager.isWifiEnabled()) {
-			int ipAddress = wifiManager.getConnectionInfo().getIpAddress();
-			// Convert little-endian to big-endianif needed
-			if (ByteOrder.nativeOrder().equals(ByteOrder.LITTLE_ENDIAN)) {
-				ipAddress = Integer.reverseBytes(ipAddress);
-			}
-			byte[] ipByteArray = BigInteger.valueOf(ipAddress).toByteArray();
-			try {
+		try {
+			WifiManager wifiManager = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
+			if (wifiManager != null && wifiManager.isWifiEnabled()) {
+				int ipAddress = wifiManager.getConnectionInfo().getIpAddress();
+				// Convert little-endian to big-endianif needed
+				if (ByteOrder.nativeOrder().equals(ByteOrder.LITTLE_ENDIAN)) {
+					ipAddress = Integer.reverseBytes(ipAddress);
+				}
+				byte[] ipByteArray = BigInteger.valueOf(ipAddress).toByteArray();
 				host = InetAddress.getByAddress(ipByteArray).getHostAddress();
 				if(isIPv4NetworkIP(host)){
 					Log.e(TAG, "getWifiIp() "+ host);
 					return host;
 				}
-			} catch (UnknownHostException ex) {
-				Log.e(TAG, "getWifiIp() Unable to get host address.", ex);
 			}
+		} catch (UnknownHostException ex) {
+			Log.e(TAG, "getWifiIp() Unable to get host address.", ex);
 		}
 		return "";
 	}
-
-    public String getNetworkInterfaceIpAddress() {
-        try {
-            for (Enumeration<NetworkInterface> en = NetworkInterface.getNetworkInterfaces(); en.hasMoreElements(); ) {
-                NetworkInterface networkInterface = en.nextElement();
-                for (Enumeration<InetAddress> enumIpAddr = networkInterface.getInetAddresses(); enumIpAddr.hasMoreElements(); ) {
-                    InetAddress inetAddress = enumIpAddr.nextElement();
-                    if (!inetAddress.isLoopbackAddress() && inetAddress instanceof Inet4Address) {
-                        String host = inetAddress.getHostAddress();
-                        if (host != null){
-							Log.e(TAG, "getLocalIpAddress() "+ host);
-							if(isIPv4NetworkIP(host)) {
-								return host;
-							}
-                        }
-                    }
-                }
-            }
-        } catch (Exception ex) {
-            Log.e(TAG, "getLocalIpAddress", ex);
-        }
-        return "";
-    }
     
     public boolean isIPv4NetworkIP(String addr) {
         if(addr != null){
