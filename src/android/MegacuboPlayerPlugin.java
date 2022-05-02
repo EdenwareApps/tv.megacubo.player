@@ -33,13 +33,12 @@ import android.widget.RelativeLayout;
 
 import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.Player;
+import com.google.android.exoplayer2.ExoPlayer;
 import com.google.android.exoplayer2.Timeline;
 import com.google.android.exoplayer2.util.Util;
 import com.google.android.exoplayer2.SeekParameters;
-import com.google.android.exoplayer2.SimpleExoPlayer;
 import com.google.android.exoplayer2.PlaybackParameters;
-import com.google.android.exoplayer2.ExoPlaybackException;
-import com.google.android.exoplayer2.video.VideoListener;
+import com.google.android.exoplayer2.PlaybackException;
 import com.google.android.exoplayer2.ui.PlayerView;
 import com.google.android.exoplayer2.ui.AspectRatioFrameLayout;
 import com.google.android.exoplayer2.upstream.DefaultAllocator;
@@ -47,7 +46,6 @@ import com.google.android.exoplayer2.upstream.DataSource;
 import com.google.android.exoplayer2.upstream.DefaultDataSource;
 import com.google.android.exoplayer2.upstream.DefaultDataSourceFactory;
 import com.google.android.exoplayer2.upstream.DefaultHttpDataSource;
-import com.google.android.exoplayer2.upstream.DefaultHttpDataSourceFactory;
 import com.google.android.exoplayer2.upstream.HttpDataSource;
 import com.google.android.exoplayer2.extractor.DefaultExtractorsFactory;
 import com.google.android.exoplayer2.MediaItem;
@@ -55,6 +53,7 @@ import com.google.android.exoplayer2.source.MediaSource;
 import com.google.android.exoplayer2.source.ProgressiveMediaSource;
 import com.google.android.exoplayer2.source.DefaultMediaSourceFactory;
 import com.google.android.exoplayer2.source.hls.HlsMediaSource;
+import com.google.android.exoplayer2.video.VideoSize;
 
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaInterface;
@@ -104,12 +103,12 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     private boolean isPlaying;
     private float currentVolume = 0f;
 
-    private SimpleExoPlayer player;
+    private ExoPlayer player;
     private PlayerView playerView;
     private ViewGroup parentView;
     private DataSource.Factory dataSourceFactory;
-    private Player.EventListener eventListener;
-    private VideoListener videoListener;
+    private Player.Listener eventListener;
+    private Player.Listener videoListener;
     
     private static final int BUFFER_SEGMENT_SIZE = 64 * 1024;
     private static final int BUFFER_SEGMENT_COUNT = 256;
@@ -614,18 +613,21 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
         
         Map<String, String> headers = new HashMap<String, String>(1);
         headers.put("Cookie", cookie);
-        DefaultHttpDataSource.Factory httpDataSource = new DefaultHttpDataSource.Factory()
-            .setUserAgent(ua)
+
+		HttpDataSource.Factory httpDataSource = new DefaultHttpDataSource.Factory()
+			.setAllowCrossProtocolRedirects(true)
+			.setUserAgent(ua)
             .setConnectTimeoutMs(10000)
             .setReadTimeoutMs(10000)
             .setAllowCrossProtocolRedirects(true)
             .setDefaultRequestProperties(headers);
-        // httpDataSource.getDefaultRequestProperties().set("Cookie", cookie);       
-        DefaultDataSourceFactory factory = new DefaultDataSourceFactory(context, null, httpDataSource);
+		DefaultDataSource.Factory dataSourceFactory = new DefaultDataSource.Factory(context, httpDataSource);
+
         if(mimetype.toLowerCase().indexOf("mpegurl") != -1){
-            return new HlsMediaSource.Factory(factory).createMediaSource(mediaItem);
+			HlsMediaSource hlsMediaSource = new HlsMediaSource.Factory(dataSourceFactory).createMediaSource(MediaItem.fromUri(u));
+			return hlsMediaSource;
         } else {
-            return new DefaultMediaSourceFactory(factory).createMediaSource(mediaItem);
+            return new DefaultMediaSourceFactory(dataSourceFactory).createMediaSource(mediaItem);
         }
     }
 
@@ -684,6 +686,271 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     private static void resetErrorCounter(){
         errorCounter.clear();
     }
+	
+	private class PlayerEventListener implements Player.Listener {
+
+		/*
+		@Override
+		public void onPlayerError(PlaybackException error) {
+			if (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
+				player.seekToDefaultPosition();
+				player.prepare();
+			} else {
+				updateButtonVisibility();
+				showControls();
+			}
+		}
+
+
+		@Override
+		public void onPlayerError(PlaybackException error) {
+			Map<String, Long> data = GetTimeData();
+			String what;
+			String errStr = error.toString();
+			String playbackPosition = data.get("position") +"-"+ data.get("duration");
+			boolean isLive = currentMediatype.equals("live");
+			switch (error.type) {
+				case PlaybackException.TYPE_SOURCE:
+					what = "Source error: " + error.getSourceException().getMessage();
+					break;
+				case PlaybackException.TYPE_RENDERER:
+					what = "Renderer error: " + error.getRendererException().getMessage();
+					break;
+				case PlaybackException.TYPE_UNEXPECTED:
+					what = "Unexpected error: " + error.getUnexpectedException().getMessage();
+					break;
+				default:
+					what = "Unknown error: " + errStr;
+			}
+			int errorCount = increaseErrorCounter();
+			if(errorCount >= 3){
+				Log.e(TAG, "onPlayerError (fatal, "+ errorCount +" errors) " + errStr +" "+ what +" "+ playbackPosition);
+				sendEvent("error", "ExoPlayer error " + what, false);
+				MCStop();
+				return;
+			}
+			String errStack = Log.getStackTraceString(error); 
+			String errorFullStr = errStr + " " + what + " " + errStack;
+			if(isLive && ( 
+				errorFullStr.indexOf("PlaylistStuck") != -1 || 
+				errorFullStr.indexOf("BehindLiveWindow") != -1 || 
+				errorFullStr.indexOf("Most likely not a Transport Stream") != -1 ||
+				errorFullStr.indexOf("PlaylistResetException") != -1 || 
+				errorFullStr.indexOf("Unable to connect") != -1 || 
+				errorFullStr.indexOf("Response code: 404") != -1
+			)){
+				sendEvent("state", "loading", false);
+				SendTimeData(true); // send last valid data to ui
+				
+				sendEventEnabled = false;
+				playerView.setKeepContentOnPlayerReset(true);
+				
+				boolean resetTime = currentMediatype.equals("live");
+				if(player != null){
+					player.setPlayWhenReady(false);
+					if(resetTime){
+						player.stop();
+					}
+				}
+				MCPrepare(resetTime);
+				setTimeout(() -> {
+					sendEventEnabled = true;
+					if(currentPlayerState.equals("loading")){
+						cordova.getActivity().runOnUiThread(new Runnable() {
+							@Override
+							public void run() {
+								fixStalledPlayback();
+							}
+						});
+					} else {
+						sendEvent("state", currentPlayerState, false);
+					}
+				}, 100);
+				Log.e(TAG, "onPlayerError (auto-recovering) " + errStr + " " + what + " " + resetTime +" "+ playbackPosition);
+			} else if(!isLive || (
+				errorFullStr.indexOf("Renderer error") != -1 || 
+				errorFullStr.indexOf("InvalidResponseCode") != -1
+			)) {
+				
+				sendEvent("state", "loading", false);
+				SendTimeData(true); // send last valid data to ui
+				
+				sendEventEnabled = false;
+				playerView.setKeepContentOnPlayerReset(true);
+				
+				player.retry();
+				setTimeout(() -> {            
+					sendEventEnabled = true;
+					if(currentPlayerState.equals("loading")){
+						cordova.getActivity().runOnUiThread(new Runnable() {
+							@Override
+							public void run() {
+								fixStalledPlayback();
+							}
+						});
+					} else {
+						sendEvent("state", currentPlayerState, false);
+					}
+				}, 100);
+				Log.e(TAG, "*onPlayerError (auto-recovering) " + errStr + " " + what +" "+ playbackPosition);
+			} else {
+				Log.e(TAG, "*onPlayerError (fatal) " + errStr +" "+ what +" "+ playbackPosition);
+				sendEvent("error", "ExoPlayer error " + what, false);
+				MCStop();
+			}
+		}
+		*/
+
+
+		@Override
+		public void onPlayerError(PlaybackException error) {
+			Map<String, Long> data = GetTimeData();
+			String what = "";
+			String errStr = error.toString();
+			String playbackPosition = data.get("position") +"-"+ data.get("duration");
+			boolean isLive = currentMediatype.equals("live");
+			int errorCount = increaseErrorCounter();
+			if(errorCount >= 3){
+				Log.e(TAG, "onPlayerError (fatal, "+ errorCount +" errors) " + errStr +" "+ what +" "+ playbackPosition);
+				sendEvent("error", "ExoPlayer error " + what, false);
+				MCStop();
+				return;
+			}
+			String errStack = Log.getStackTraceString(error); 
+			String errorFullStr = errStr + " " + what + " " + errStack;
+			if(isLive && ( 
+				error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW || 
+				errorFullStr.indexOf("PlaylistStuck") != -1 || 
+				errorFullStr.indexOf("Most likely not a Transport Stream") != -1 ||
+				errorFullStr.indexOf("PlaylistResetException") != -1 || 
+				errorFullStr.indexOf("Unable to connect") != -1 || 
+				errorFullStr.indexOf("Response code: 404") != -1
+			)){
+				sendEvent("state", "loading", false);
+				SendTimeData(true); // send last valid data to ui
+				
+				sendEventEnabled = false;
+				playerView.setKeepContentOnPlayerReset(true);
+				
+				boolean resetTime = currentMediatype.equals("live");
+				if(player != null){
+					player.setPlayWhenReady(false);
+					if(resetTime){
+						player.stop();
+					}
+				}
+				MCPrepare(resetTime);
+				setTimeout(() -> {
+					sendEventEnabled = true;
+					if(currentPlayerState.equals("loading")){
+						cordova.getActivity().runOnUiThread(new Runnable() {
+							@Override
+							public void run() {
+								fixStalledPlayback();
+							}
+						});
+					} else {
+						sendEvent("state", currentPlayerState, false);
+					}
+				}, 100);
+				Log.e(TAG, "onPlayerError (auto-recovering) " + errStr + " " + what + " " + resetTime +" "+ playbackPosition);
+			} else if(!isLive || (
+				errorFullStr.indexOf("Renderer error") != -1 || 
+				errorFullStr.indexOf("InvalidResponseCode") != -1
+			)) {
+				
+				sendEvent("state", "loading", false);
+				SendTimeData(true); // send last valid data to ui
+				
+				sendEventEnabled = false;
+				playerView.setKeepContentOnPlayerReset(true);
+				
+				player.retry();
+				setTimeout(() -> {            
+					sendEventEnabled = true;
+					if(currentPlayerState.equals("loading")){
+						cordova.getActivity().runOnUiThread(new Runnable() {
+							@Override
+							public void run() {
+								fixStalledPlayback();
+							}
+						});
+					} else {
+						sendEvent("state", currentPlayerState, false);
+					}
+				}, 100);
+				Log.e(TAG, "*onPlayerError (auto-recovering) " + errStr + " " + what +" "+ playbackPosition);
+			} else {
+				Log.e(TAG, "*onPlayerError (fatal) " + errStr +" "+ what +" "+ playbackPosition);
+				sendEvent("error", "ExoPlayer error " + what, false);
+				MCStop();
+			}
+		}
+
+		@Override
+		public void onPlayerStateChanged(boolean playWhenReady, int playbackState) {
+			// Player.STATE_IDLE, Player.STATE_BUFFERING, Player.STATE_READY or Player.STATE_ENDED.
+			String state = "";
+			if(playWhenReady){
+				switch(playbackState){
+					case Player.STATE_IDLE: // the player is stopped or playback failed.
+						state = "";
+						break;
+					case Player.STATE_ENDED: // finished playing all media.
+						state = "ended";
+						break;
+					case Player.STATE_BUFFERING: // not able to immediately play from its current position, more data needs to be loaded.
+						state = "loading";
+						break;
+					case Player.STATE_READY: // able to immediately play from its current position.
+						state = "playing";
+						MCPlaybackRate(currentPlaybackRate);
+						break;
+				}
+			} else {
+				switch(playbackState){
+					case Player.STATE_IDLE:
+						state = "";
+						break;
+					case Player.STATE_ENDED:
+						state = "ended";
+						break;
+					case Player.STATE_BUFFERING:
+					case Player.STATE_READY:
+						state = "paused";
+						break;
+				}
+			}
+			if(state.equals("loading")){
+				videoLoadingSince = System.currentTimeMillis();
+			}
+			currentPlayerState = state;
+			sendEvent("state", state, false);
+			cordova.getActivity().runOnUiThread(new Runnable() {
+				@Override
+				public void run() {
+					fixStalledPlayback();
+				}
+			});
+		}
+
+		@Override 
+		public void onIsPlayingChanged(boolean playing){
+			isPlaying = playing;
+			if(isPlaying) {
+				handler.postDelayed(timer, 0);
+			} else {
+				handler.removeCallbacks(timer);
+			}
+		}
+
+		@Override
+		public void onVideoSizeChanged​(VideoSize videoSize) {
+			videoWidth = videoSize.width;
+			videoHeight = videoSize.height;
+			ResetAspectRatio();
+		}
+	}
 
     private void initMegacuboPlayer() {
         if(!isActive){
@@ -692,182 +959,15 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 			
 				Log.d(TAG, "init");
 
-				playerContainer = new FrameLayout(cordova.getActivity());
-						
-				// Player Event Listener
-				eventListener = new Player.EventListener() {
-
-					@Override
-					public void onPlayerStateChanged(boolean playWhenReady, int playbackState) {
-						// Player.STATE_IDLE, Player.STATE_BUFFERING, Player.STATE_READY or Player.STATE_ENDED.
-						String state = "";
-						if(playWhenReady){
-							switch(playbackState){
-								case Player.STATE_IDLE: // the player is stopped or playback failed.
-									state = "";
-									break;
-								case Player.STATE_ENDED: // finished playing all media.
-									state = "ended";
-									break;
-								case Player.STATE_BUFFERING: // not able to immediately play from its current position, more data needs to be loaded.
-									state = "loading";
-									break;
-								case Player.STATE_READY: // able to immediately play from its current position.
-									state = "playing";
-									MCPlaybackRate(currentPlaybackRate);
-									break;
-							}
-						} else {
-							switch(playbackState){
-								case Player.STATE_IDLE:
-									state = "";
-									break;
-								case Player.STATE_ENDED:
-									state = "ended";
-									break;
-								case Player.STATE_BUFFERING:
-								case Player.STATE_READY:
-									state = "paused";
-									break;
-							}
-						}
-						if(state.equals("loading")){
-							videoLoadingSince = System.currentTimeMillis();
-						}
-						currentPlayerState = state;
-						sendEvent("state", state, false);
-						cordova.getActivity().runOnUiThread(new Runnable() {
-							@Override
-							public void run() {
-								fixStalledPlayback();
-							}
-						});
-					}
-
-					@Override 
-					public void onIsPlayingChanged(boolean playing){
-						isPlaying = playing;
-						if(isPlaying) {
-							handler.postDelayed(timer, 0);
-						} else {
-							handler.removeCallbacks(timer);
-						}
-					}
-
-					@Override
-					public void onPlayerError(ExoPlaybackException error) {
-						Map<String, Long> data = GetTimeData();
-                        String what;
-						String errStr = error.toString();
-						String playbackPosition = data.get("position") +"-"+ data.get("duration");
-						boolean isLive = currentMediatype.equals("live");
-						switch (error.type) {
-							case ExoPlaybackException.TYPE_SOURCE:
-								what = "Source error: " + error.getSourceException().getMessage();
-								break;
-							case ExoPlaybackException.TYPE_RENDERER:
-								what = "Renderer error: " + error.getRendererException().getMessage();
-								break;
-							case ExoPlaybackException.TYPE_UNEXPECTED:
-								what = "Unexpected error: " + error.getUnexpectedException().getMessage();
-								break;
-							default:
-								what = "Unknown error: " + errStr;
-						}
-						int errorCount = increaseErrorCounter();
-                        if(errorCount >= 3){
-							Log.e(TAG, "onPlayerError (fatal, "+ errorCount +" errors) " + errStr +" "+ what +" "+ playbackPosition);
-							sendEvent("error", "ExoPlayer error " + what, false);
-							MCStop();
-                            return;
-                        }
-						String errStack = Log.getStackTraceString(error); 
-						String errorFullStr = errStr + " " + what + " " + errStack;
-						if(isLive && ( 
-							errorFullStr.indexOf("PlaylistStuck") != -1 || 
-							errorFullStr.indexOf("BehindLiveWindow") != -1 || 
-							errorFullStr.indexOf("Most likely not a Transport Stream") != -1 ||
-							errorFullStr.indexOf("PlaylistResetException") != -1 || 
-							errorFullStr.indexOf("Unable to connect") != -1 || 
-							errorFullStr.indexOf("Response code: 404") != -1
-						)){
-							sendEvent("state", "loading", false);
-							SendTimeData(true); // send last valid data to ui
-							
-							sendEventEnabled = false;
-							playerView.setKeepContentOnPlayerReset(true);
-							
-							boolean resetTime = currentMediatype.equals("live");
-							if(player != null){
-								player.setPlayWhenReady(false);
-								if(resetTime){
-									player.stop();
-								}
-							}
-							MCPrepare(resetTime);
-							setTimeout(() -> {
-								sendEventEnabled = true;
-								if(currentPlayerState.equals("loading")){
-									cordova.getActivity().runOnUiThread(new Runnable() {
-										@Override
-										public void run() {
-											fixStalledPlayback();
-										}
-									});
-								} else {
-									sendEvent("state", currentPlayerState, false);
-								}
-							}, 100);
-							Log.e(TAG, "onPlayerError (auto-recovering) " + errStr + " " + what + " " + resetTime +" "+ playbackPosition);
-						} else if(!isLive || (
-							errorFullStr.indexOf("Renderer error") != -1 || 
-							errorFullStr.indexOf("InvalidResponseCode") != -1
-						)) {
-							
-							sendEvent("state", "loading", false);
-							SendTimeData(true); // send last valid data to ui
-							
-							sendEventEnabled = false;
-							playerView.setKeepContentOnPlayerReset(true);
-							
-							player.retry();
-							setTimeout(() -> {            
-								sendEventEnabled = true;
-								if(currentPlayerState.equals("loading")){
-									cordova.getActivity().runOnUiThread(new Runnable() {
-										@Override
-										public void run() {
-											fixStalledPlayback();
-										}
-									});
-								} else {
-									sendEvent("state", currentPlayerState, false);
-								}
-							}, 100);
-							Log.e(TAG, "*onPlayerError (auto-recovering) " + errStr + " " + what +" "+ playbackPosition);
-						} else {
-							Log.e(TAG, "*onPlayerError (fatal) " + errStr +" "+ what +" "+ playbackPosition);
-							sendEvent("error", "ExoPlayer error " + what, false);
-							MCStop();
-						}
-					}
-				};  
+				playerContainer = new FrameLayout(cordova.getActivity());		
+				eventListener = new PlayerEventListener();
 				parentView = (ViewGroup) webView.getView().getParent();
 			};
-			
-			videoListener = new VideoListener() {
-				@Override
-				public void onVideoSizeChanged(int width, int height, int unappliedRotationDegrees, float pixelWidthHeightRatio) {
-					videoWidth = width;
-					videoHeight = height;
-					ResetAspectRatio();
-				}
-			};
-			
+						
             if(player == null){
 				webView.getView().setBackgroundColor(android.R.color.transparent);
                 playerView = new PlayerView(context); 
-                player = new SimpleExoPlayer.Builder(context).build();
+                player = new ExoPlayer.Builder(context).build();
                 playerView.setUseController(false); 
                 playerView.setPlayer(player);
                 player.setHandleAudioBecomingNoisy(true);
@@ -875,7 +975,6 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                 player.setSeekParameters(SeekParameters.CLOSEST_SYNC);
                 player.setVideoScalingMode(C.VIDEO_SCALING_MODE_SCALE_TO_FIT);
                 player.addListener(eventListener);
-                player.addVideoListener(videoListener);
                 playerContainer.addView(playerView);
                 aspectRatioParams = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
                 parentView.setBackgroundColor(Color.BLACK);
@@ -959,6 +1058,8 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 		if(player != null){
 			player.setPlayWhenReady(false);
 			player.stop();
+			player.release();
+			player = null;
 		}
         if(viewAdded){
             viewAdded = false;
