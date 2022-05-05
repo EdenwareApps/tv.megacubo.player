@@ -608,6 +608,11 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
         MediaItem mediaItem = new MediaItem.Builder()
             .setUri(Uri.parse(u))
             .setMimeType​(mimetype)
+			.setLiveConfiguration(
+				new MediaItem.LiveConfiguration.Builder()
+					.setMinPlaybackSpeed(1.0f)
+					.setMaxPlaybackSpeed(1.0f)
+					.build())
             .build();
         Log.d(TAG, "MEDIASOURCE " + u + ", " + mimetype + ", " + ua + ", " + cookie);
         
@@ -622,7 +627,6 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
             .setAllowCrossProtocolRedirects(true)
             .setDefaultRequestProperties(headers);
 		DefaultDataSource.Factory dataSourceFactory = new DefaultDataSource.Factory(context, httpDataSource);
-
         if(mimetype.toLowerCase().indexOf("mpegurl") != -1){
 			HlsMediaSource hlsMediaSource = new HlsMediaSource.Factory(dataSourceFactory).createMediaSource(MediaItem.fromUri(u));
 			return hlsMediaSource;
@@ -689,119 +693,6 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 	
 	private class PlayerEventListener implements Player.Listener {
 
-		/*
-		@Override
-		public void onPlayerError(PlaybackException error) {
-			if (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
-				player.seekToDefaultPosition();
-				player.prepare();
-			} else {
-				updateButtonVisibility();
-				showControls();
-			}
-		}
-
-
-		@Override
-		public void onPlayerError(PlaybackException error) {
-			Map<String, Long> data = GetTimeData();
-			String what;
-			String errStr = error.toString();
-			String playbackPosition = data.get("position") +"-"+ data.get("duration");
-			boolean isLive = currentMediatype.equals("live");
-			switch (error.type) {
-				case PlaybackException.TYPE_SOURCE:
-					what = "Source error: " + error.getSourceException().getMessage();
-					break;
-				case PlaybackException.TYPE_RENDERER:
-					what = "Renderer error: " + error.getRendererException().getMessage();
-					break;
-				case PlaybackException.TYPE_UNEXPECTED:
-					what = "Unexpected error: " + error.getUnexpectedException().getMessage();
-					break;
-				default:
-					what = "Unknown error: " + errStr;
-			}
-			int errorCount = increaseErrorCounter();
-			if(errorCount >= 3){
-				Log.e(TAG, "onPlayerError (fatal, "+ errorCount +" errors) " + errStr +" "+ what +" "+ playbackPosition);
-				sendEvent("error", "ExoPlayer error " + what, false);
-				MCStop();
-				return;
-			}
-			String errStack = Log.getStackTraceString(error); 
-			String errorFullStr = errStr + " " + what + " " + errStack;
-			if(isLive && ( 
-				errorFullStr.indexOf("PlaylistStuck") != -1 || 
-				errorFullStr.indexOf("BehindLiveWindow") != -1 || 
-				errorFullStr.indexOf("Most likely not a Transport Stream") != -1 ||
-				errorFullStr.indexOf("PlaylistResetException") != -1 || 
-				errorFullStr.indexOf("Unable to connect") != -1 || 
-				errorFullStr.indexOf("Response code: 404") != -1
-			)){
-				sendEvent("state", "loading", false);
-				SendTimeData(true); // send last valid data to ui
-				
-				sendEventEnabled = false;
-				playerView.setKeepContentOnPlayerReset(true);
-				
-				boolean resetTime = currentMediatype.equals("live");
-				if(player != null){
-					player.setPlayWhenReady(false);
-					if(resetTime){
-						player.stop();
-					}
-				}
-				MCPrepare(resetTime);
-				setTimeout(() -> {
-					sendEventEnabled = true;
-					if(currentPlayerState.equals("loading")){
-						cordova.getActivity().runOnUiThread(new Runnable() {
-							@Override
-							public void run() {
-								fixStalledPlayback();
-							}
-						});
-					} else {
-						sendEvent("state", currentPlayerState, false);
-					}
-				}, 100);
-				Log.e(TAG, "onPlayerError (auto-recovering) " + errStr + " " + what + " " + resetTime +" "+ playbackPosition);
-			} else if(!isLive || (
-				errorFullStr.indexOf("Renderer error") != -1 || 
-				errorFullStr.indexOf("InvalidResponseCode") != -1
-			)) {
-				
-				sendEvent("state", "loading", false);
-				SendTimeData(true); // send last valid data to ui
-				
-				sendEventEnabled = false;
-				playerView.setKeepContentOnPlayerReset(true);
-				
-				player.retry();
-				setTimeout(() -> {            
-					sendEventEnabled = true;
-					if(currentPlayerState.equals("loading")){
-						cordova.getActivity().runOnUiThread(new Runnable() {
-							@Override
-							public void run() {
-								fixStalledPlayback();
-							}
-						});
-					} else {
-						sendEvent("state", currentPlayerState, false);
-					}
-				}, 100);
-				Log.e(TAG, "*onPlayerError (auto-recovering) " + errStr + " " + what +" "+ playbackPosition);
-			} else {
-				Log.e(TAG, "*onPlayerError (fatal) " + errStr +" "+ what +" "+ playbackPosition);
-				sendEvent("error", "ExoPlayer error " + what, false);
-				MCStop();
-			}
-		}
-		*/
-
-
 		@Override
 		public void onPlayerError(PlaybackException error) {
 			Map<String, Long> data = GetTimeData();
@@ -825,21 +716,15 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 				errorFullStr.indexOf("PlaylistResetException") != -1 || 
 				errorFullStr.indexOf("Unable to connect") != -1 || 
 				errorFullStr.indexOf("Response code: 404") != -1
-			)){
+			)){				
 				sendEvent("state", "loading", false);
 				SendTimeData(true); // send last valid data to ui
 				
 				sendEventEnabled = false;
 				playerView.setKeepContentOnPlayerReset(true);
 				
-				boolean resetTime = currentMediatype.equals("live");
-				if(player != null){
-					player.setPlayWhenReady(false);
-					if(resetTime){
-						player.stop();
-					}
-				}
-				MCPrepare(resetTime);
+				player.seekToDefaultPosition();
+				player.prepare();
 				setTimeout(() -> {
 					sendEventEnabled = true;
 					if(currentPlayerState.equals("loading")){
@@ -853,7 +738,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 						sendEvent("state", currentPlayerState, false);
 					}
 				}, 100);
-				Log.e(TAG, "onPlayerError (auto-recovering) " + errStr + " " + what + " " + resetTime +" "+ playbackPosition);
+				Log.e(TAG, "onPlayerError (auto-recovering) " + errStr + " " + what + " " + playbackPosition);
 			} else if(!isLive || (
 				errorFullStr.indexOf("Renderer error") != -1 || 
 				errorFullStr.indexOf("InvalidResponseCode") != -1
@@ -955,18 +840,15 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     private void initMegacuboPlayer() {
         if(!isActive){
             isActive = true;
-			if(playerContainer == null) {
-			
+			if(playerContainer == null) {			
 				Log.d(TAG, "init");
-
 				playerContainer = new FrameLayout(cordova.getActivity());		
 				eventListener = new PlayerEventListener();
 				parentView = (ViewGroup) webView.getView().getParent();
-			};
-						
+				playerView = new PlayerView(context);
+                playerContainer.addView(playerView);
+			}						
             if(player == null){
-				webView.getView().setBackgroundColor(android.R.color.transparent);
-                playerView = new PlayerView(context); 
                 player = new ExoPlayer.Builder(context).build();
                 playerView.setUseController(false); 
                 playerView.setPlayer(player);
@@ -975,13 +857,13 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                 player.setSeekParameters(SeekParameters.CLOSEST_SYNC);
                 player.setVideoScalingMode(C.VIDEO_SCALING_MODE_SCALE_TO_FIT);
                 player.addListener(eventListener);
-                playerContainer.addView(playerView);
-                aspectRatioParams = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                parentView.setBackgroundColor(Color.BLACK);
             }
             if(!viewAdded){
                 viewAdded = true;
+                aspectRatioParams = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
                 parentView.addView(playerContainer, 0, aspectRatioParams);
+				webView.getView().setBackgroundColor(android.R.color.transparent);
+                parentView.setBackgroundColor(Color.BLACK);
             }
         }
     }
@@ -1054,9 +936,10 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 
 	private void MCStop() {
         Log.d(TAG, "Stopping video.");
+		resetErrorCounter();
+		playerView.setKeepContentOnPlayerReset(false);
         isActive = false;
 		if(player != null){
-			player.setPlayWhenReady(false);
 			player.stop();
 			player.release();
 			player = null;
@@ -1134,5 +1017,9 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 		super.onDestroy();
 		Log.d(TAG, "onDestroy triggered.");
 		MCStop();
+		if(player != null){
+			player.release();
+			player = null;
+		}
 	}
 }
