@@ -716,15 +716,18 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 				errorFullStr.indexOf("PlaylistResetException") != -1 || 
 				errorFullStr.indexOf("Unable to connect") != -1 || 
 				errorFullStr.indexOf("Response code: 404") != -1
-			)){				
+			)){
 				sendEvent("state", "loading", false);
 				SendTimeData(true); // send last valid data to ui
 				
 				sendEventEnabled = false;
 				playerView.setKeepContentOnPlayerReset(true);
 				
-				player.seekToDefaultPosition();
-				player.prepare();
+				if(player != null){
+					player.setPlayWhenReady(false);
+					player.stop();
+				}
+				MCPrepare(true);
 				setTimeout(() -> {
 					sendEventEnabled = true;
 					if(currentPlayerState.equals("loading")){
@@ -738,7 +741,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 						sendEvent("state", currentPlayerState, false);
 					}
 				}, 100);
-				Log.e(TAG, "onPlayerError (auto-recovering) " + errStr + " " + what + " " + playbackPosition);
+				Log.e(TAG, "onPlayerError (auto-recovering) " + errStr + " " + what + "  "+ playbackPosition);
 			} else if(!isLive || (
 				errorFullStr.indexOf("Renderer error") != -1 || 
 				errorFullStr.indexOf("InvalidResponseCode") != -1
