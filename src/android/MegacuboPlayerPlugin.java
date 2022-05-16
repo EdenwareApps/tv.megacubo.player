@@ -101,7 +101,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     
     private boolean isActive;
     private boolean isPlaying;
-    private float currentVolume = 0f;
+    private float currentVolume = 1f;
 
     private ExoPlayer player;
     private PlayerView playerView;
@@ -673,6 +673,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 		}
         player.prepare();
         player.setPlayWhenReady(true);
+        player.setVolume(currentVolume);
         webView.getView().setBackgroundColor(android.R.color.transparent);
     }
     
@@ -724,7 +725,6 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 				playerView.setKeepContentOnPlayerReset(true);
 				
 				if(player != null){
-					player.setPlayWhenReady(false);
 					player.stop();
 				}
 				MCPrepare(true);
@@ -940,9 +940,9 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 	private void MCStop() {
         Log.d(TAG, "Stopping video.");
 		resetErrorCounter();
-		playerView.setKeepContentOnPlayerReset(false);
         isActive = false;
 		if(player != null){
+			playerView.setKeepContentOnPlayerReset(false);
 			player.stop();
 			player.release();
 			player = null;
