@@ -114,6 +114,12 @@ function MegacuboPlayer() {
             self.networkIp = e
             self.emit('network-ip', e)
         })
+        self.on('nightMode', info => {
+            if(!self.nightModeInfo){
+                self.nightModeInfo = info
+                self.emit('nightmode', info)
+            }
+        })
         self.on('time', e => {
             e.currentTime = e.currentTime / 1000;
             e.duration = e.duration / 1000;

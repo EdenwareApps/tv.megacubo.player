@@ -119,6 +119,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     private String currentMimetype = "";
     private String currentCookie = "";
     private float currentPlaybackRate = 1;
+    private boolean checkedMiUi = false;
     private boolean viewAdded = false;
     private boolean sendEventEnabled = true;
     private long lastVideoTime = -1;
@@ -221,6 +222,32 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 		}
 	}
 
+	public static boolean isMiUi() {
+        return !TextUtils.isEmpty(getSystemProperty("ro.miui.ui.version.name"));
+    }
+
+    public static String getSystemProperty(String propName) {
+        String line;
+        BufferedReader input = null;
+        try {
+            java.lang.Process p = Runtime.getRuntime().exec("getprop " + propName);
+            input = new BufferedReader(new InputStreamReader(p.getInputStream()), 1024);
+            line = input.readLine();
+            input.close();
+        } catch (IOException ex) {
+            return null;
+        } finally {
+            if (input != null) {
+                try {
+                    input.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+        return line;
+    }
+
     @Override
     public boolean execute(String action, JSONArray args, CallbackContext callbackContext) throws JSONException {
         //noinspection IfCanBeSwitch using if instead of switch in order to maintain compatibility with Java 6 projects
@@ -242,6 +269,12 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                         try {       
                             uiVisible = true;
                             MCLoad(args.getString(0), args.getString(1), args.getString(2), args.getString(3), callbackContext);
+							if(!checkedMiUi){
+								checkedMiUi = true;
+								String MiUi = isMiUi() ? "true" : "false";
+								int nightMode = AppCompatDelegate.getDefaultNightMode();
+        						sendEvent("nightMode", "{\"mode\":" + nightMode + ",\"miui\":" + MiUi + "}", true);
+							}
                         } catch (JSONException e) {
                             throw new RuntimeException(e);
                         }
