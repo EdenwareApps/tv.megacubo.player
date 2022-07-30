@@ -14,6 +14,7 @@ import android.content.res.Configuration;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
+import android.text.TextUtils;
 import android.util.Log;
 import android.util.DisplayMetrics;
 import android.view.Window;
@@ -55,6 +56,8 @@ import com.google.android.exoplayer2.source.DefaultMediaSourceFactory;
 import com.google.android.exoplayer2.source.hls.HlsMediaSource;
 import com.google.android.exoplayer2.video.VideoSize;
 
+import androidx.appcompat.app.AppCompatDelegate;
+
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaInterface;
 import org.apache.cordova.CordovaPlugin;
@@ -65,6 +68,9 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.IOException;
 import java.math.BigInteger;
 import java.nio.ByteOrder;
 import java.net.MalformedURLException;
@@ -482,9 +488,9 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 		int remainingTime = ((int) (duration - position)) / 1000;
 		//Log.d(TAG, "Playback seems stalled for "+ elapsed + "s, remainingTime: " + remainingTime + "s");
 		if(remainingTime > hlsMinPlaylistWindowTime){
-			// não deve ser menor que duration - 30 
-			// nem menor quer 10
-			// não pode ser maior que liveduration - 3
+			// nao deve ser menor que duration - 30 
+			// nem menor que 10
+			// nao pode ser maior que liveduration - 3
 			long offset = data.get("offset");						
 			long newPosition = position + 10000;
 			long minNewPosition = duration - 30000;
@@ -640,7 +646,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     public MediaSource getMediaSource(String u, String mimetype, String cookie) {
         MediaItem mediaItem = new MediaItem.Builder()
             .setUri(Uri.parse(u))
-            .setMimeType​(mimetype)
+            .setMimeType(mimetype)
 			.setLiveConfiguration(
 				new MediaItem.LiveConfiguration.Builder()
 					.setMinPlaybackSpeed(1.0f)
@@ -866,7 +872,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 		}
 
 		@Override
-		public void onVideoSizeChanged​(VideoSize videoSize) {
+		public void onVideoSizeChanged(VideoSize videoSize) {
 			videoWidth = videoSize.width;
 			videoHeight = videoSize.height;
 			ResetAspectRatio();
