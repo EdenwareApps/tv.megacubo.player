@@ -32,10 +32,14 @@ import android.view.View.OnLayoutChangeListener;
 import android.widget.FrameLayout;
 import android.widget.RelativeLayout;
 
+import com.google.common.collect.ImmutableList;
 import com.google.android.exoplayer2.C;
+import com.google.android.exoplayer2.Format;
 import com.google.android.exoplayer2.Player;
 import com.google.android.exoplayer2.ExoPlayer;
+import com.google.android.exoplayer2.RendererCapabilities;
 import com.google.android.exoplayer2.Timeline;
+import com.google.android.exoplayer2.Tracks;
 import com.google.android.exoplayer2.util.Util;
 import com.google.android.exoplayer2.SeekParameters;
 import com.google.android.exoplayer2.PlaybackParameters;
@@ -54,6 +58,14 @@ import com.google.android.exoplayer2.source.MediaSource;
 import com.google.android.exoplayer2.source.ProgressiveMediaSource;
 import com.google.android.exoplayer2.source.DefaultMediaSourceFactory;
 import com.google.android.exoplayer2.source.hls.HlsMediaSource;
+import com.google.android.exoplayer2.source.TrackGroup;
+import com.google.android.exoplayer2.source.TrackGroupArray;
+import com.google.android.exoplayer2.trackselection.TrackSelection;
+import com.google.android.exoplayer2.trackselection.TrackSelectionArray;
+import com.google.android.exoplayer2.trackselection.TrackSelectionOverride;
+import com.google.android.exoplayer2.trackselection.DefaultTrackSelector;
+import com.google.android.exoplayer2.trackselection.MappingTrackSelector.MappedTrackInfo;
+import com.google.android.exoplayer2.ui.DefaultTrackNameProvider;
 import com.google.android.exoplayer2.video.VideoSize;
 
 import androidx.appcompat.app.AppCompatDelegate;
@@ -143,6 +155,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 	private Handler handler;
 	private boolean uiVisible = true;
 	private boolean hasPermanentKeys;
+	private DefaultTrackSelector trackSelector;
     
     private static List<Long> errorCounter = new LinkedList<Long>();
 
@@ -312,6 +325,12 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                             } else if(action.equals("ratio")) {  
                                 float ratio = Float.valueOf(args.getString(0));
                                 MCRatio(ratio);
+                            } else if(action.equals("audioTrack")) {  
+                                String trackId = args.getString(0);
+                                audioTrack(trackId);
+                            } else if(action.equals("subtitleTrack")) {  
+                                String trackId = args.getString(0);
+                                subtitleTrack(trackId);
                             } else if(action.equals("rate")) {
                                 float rate = Float.valueOf(args.getString(0));
                                 currentPlaybackRate = rate;
@@ -368,7 +387,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 				byte[] ipByteArray = BigInteger.valueOf(ipAddress).toByteArray();
 				host = InetAddress.getByAddress(ipByteArray).getHostAddress();
 				if(isIPv4NetworkIP(host)){
-					Log.e(TAG, "getWifiIp() "+ host);
+					Log.d(TAG, "getWifiIp() "+ host);
 					return host;
 				}
 			}
@@ -877,35 +896,153 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 			videoHeight = videoSize.height;
 			ResetAspectRatio();
 		}
+	
+		@Override
+		public void onTracksChanged(Tracks tracks) {
+      		Log.d(TAG, "onTracksChanged");
+			sendTracksToUI(tracks);
+		}
+	}
+
+	public void sendTracksToUI(Tracks tracks) {
+		String groups = "";
+		Log.d(TAG, "sendTracksToUI");
+		for (Tracks.Group trackGroup : tracks.getGroups()) {
+			for (int i = 0; i < trackGroup.length; i++) {
+				boolean isSupported = trackGroup.isTrackSupported(i);
+				if(isSupported) {
+					Format format = trackGroup.getTrackFormat(i);
+					if(format.sampleMimeType.contains("audio") || format.sampleMimeType.contains("text")){
+						boolean isSelected = trackGroup.isTrackSelected(i);
+						String lang = format.language;
+						String id = format.id;
+						String label = format.label;
+						String enabled = isSelected ? "true" : "false";
+						groups += "{\"id\":\""+ id +"\",\"label\":\""+ label +"\",\"lang\":\""+ lang +"\",\"type\":\""+ format.sampleMimeType +"\",\"enabled\":"+ enabled +"},";
+					}
+				}
+			}
+		}
+		if(groups.length() > 0){
+			groups = "["+ groups.substring(0, groups.length() - 1) +"]";
+		} else {
+			groups = "[]";
+		}
+		sendEvent("tracks", groups, true);
+	}
+	
+    public void subtitleTrack(String trackId) {
+		if(player != null){
+			Tracks tracks = player.getCurrentTracks();
+			for (Tracks.Group trackGroup : tracks.getGroups()) {
+				for (int i = 0; i < trackGroup.length; i++) {
+					boolean isSupported = trackGroup.isTrackSupported(i);
+					if(isSupported) {
+						Format format = trackGroup.getTrackFormat(i);
+						Log.d(TAG, "TTRACKS3 select ;"+ format.sampleMimeType +";");
+						if(format.sampleMimeType.contains("text")){
+							String id = format.id;
+							Log.d(TAG, "TTRACKS3 select ;"+ id +";  ;"+ trackId +";");
+							if(id.equals(trackId)) {
+								boolean isSelected = trackGroup.isTrackSelected(i);
+								if(!isSelected){
+									player.setTrackSelectionParameters(
+										player.getTrackSelectionParameters()
+										.buildUpon()
+										.setOverrideForType(
+											new TrackSelectionOverride(
+												trackGroup.getMediaTrackGroup(),
+												i
+											)
+										).build()
+									);
+								}
+								Log.d(TAG, "TTRACKS4 select "+ trackId);
+								break;
+							}
+						}
+					}
+				}
+			}
+			sendTracksToUI(player.getCurrentTracks());
+		}
+	}
+	
+    public void audioTrack(String trackId) {
+		if(player != null){
+			Tracks tracks = player.getCurrentTracks();
+			for (Tracks.Group trackGroup : tracks.getGroups()) {
+				for (int i = 0; i < trackGroup.length; i++) {
+					boolean isSupported = trackGroup.isTrackSupported(i);
+					if(isSupported) {
+						Format format = trackGroup.getTrackFormat(i);
+						Log.d(TAG, "TTRACKS3 select ;"+ format.sampleMimeType +";");
+						if(format.sampleMimeType.contains("audio")){
+							String id = format.id;
+							Log.d(TAG, "TTRACKS3 select ;"+ id +";  ;"+ trackId +";");
+							if(id.equals(trackId)) {
+								boolean isSelected = trackGroup.isTrackSelected(i);
+								if(!isSelected){
+									player.setTrackSelectionParameters(
+										player.getTrackSelectionParameters()
+										.buildUpon()
+										.setOverrideForType(
+											new TrackSelectionOverride(
+												trackGroup.getMediaTrackGroup(),
+												i
+											)
+										).build()
+									);
+								}
+								Log.d(TAG, "TTRACKS4 select "+ trackId);
+								break;
+							}
+						}
+					}
+				}
+			}
+			sendTracksToUI(player.getCurrentTracks());
+		}
 	}
 
     private void initMegacuboPlayer() {
         if(!isActive){
             isActive = true;
-			if(playerContainer == null) {			
-				Log.d(TAG, "init");
-				playerContainer = new FrameLayout(cordova.getActivity());		
-				eventListener = new PlayerEventListener();
-				parentView = (ViewGroup) webView.getView().getParent();
-				playerView = new PlayerView(context);
-                playerContainer.addView(playerView);
-			}						
-            if(player == null){
-                player = new ExoPlayer.Builder(context).build();
-                playerView.setUseController(false); 
-                playerView.setPlayer(player);
-                player.setHandleAudioBecomingNoisy(true);
-                player.setHandleWakeLock(true);
-                player.setSeekParameters(SeekParameters.CLOSEST_SYNC);
-                player.setVideoScalingMode(C.VIDEO_SCALING_MODE_SCALE_TO_FIT);
-                player.addListener(eventListener);
-            }
             if(!viewAdded){
+				if(playerContainer == null) {			
+					Log.d(TAG, "init");
+					playerContainer = new FrameLayout(cordova.getActivity());		
+					eventListener = new PlayerEventListener();
+					parentView = (ViewGroup) webView.getView().getParent();
+					playerView = new PlayerView(context);
+					playerContainer.addView(playerView);
+				}						
+				if(player == null){
+					trackSelector = new DefaultTrackSelector(context);     
+					trackSelector.setParameters(
+						trackSelector.buildUponParameters().setAllowVideoMixedMimeTypeAdaptiveness(true)
+					);
+					player = new ExoPlayer.Builder(context).setTrackSelector(trackSelector).build();  
+					playerView.setPlayer(player);
+					player.setHandleAudioBecomingNoisy(true);
+					player.setHandleWakeLock(true);
+					player.setSeekParameters(SeekParameters.CLOSEST_SYNC);
+					player.setVideoScalingMode(C.VIDEO_SCALING_MODE_SCALE_TO_FIT);
+					playerView.setUseController(false); 
+					player.addListener(eventListener);
+				}
                 viewAdded = true;
-                aspectRatioParams = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                parentView.addView(playerContainer, 0, aspectRatioParams);
-				webView.getView().setBackgroundColor(android.R.color.transparent);
-                parentView.setBackgroundColor(Color.BLACK);
+                aspectRatioParams = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);					
+				setTimeout(() -> {                            
+					cordova.getActivity().runOnUiThread(new Runnable() {
+						@Override
+						public void run() {
+							parentView.addView(playerContainer, 0, aspectRatioParams);
+							webView.getView().setBackgroundColor(android.R.color.transparent);
+							parentView.setBackgroundColor(Color.BLACK);
+						}
+					});
+				}, 200);
             }
         }
     }

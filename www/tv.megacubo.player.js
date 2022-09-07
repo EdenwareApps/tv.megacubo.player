@@ -34,6 +34,8 @@ function MegacuboPlayer() {
     self.play = function(uri, mimetype, cookie, mediatype, success, error) {
         self.currentTime = 0;
         self.duration = 0;
+        self._audioTracks = null;
+        self._subtitleTracks = null;
         exec(success, error, "tv.megacubo.player", "play", [uri, mimetype, cookie, mediatype])
     }
     self.volume = function(level, success, error) {
@@ -92,8 +94,30 @@ function MegacuboPlayer() {
 			console.error('BAD PLAYBACK RATE VALUE '+ typeof(rate), rate)
 		}
     }
+    self.audioTrack = function(trackId, success, error) {
+        if(typeof(trackId) != 'undefined' && Array.isArray(self._audioTracks) && self._audioTracks.length > 1){
+			console.error('AUDIO TRACK '+ typeof(trackId), trackId)
+			exec(success, error, "tv.megacubo.player", "audioTrack", [trackId])
+		} else {
+			console.error('BAD AUDIO TRACK VALUE '+ typeof(trackId), trackId)
+		}
+    }
+    self.subtitleTrack = function(trackId, success, error) {
+        if(typeof(trackId) != 'undefined' && Array.isArray(self._subtitleTracks) && self._subtitleTracks.length > 1){
+			console.error('SUBTITLE TRACK '+ typeof(trackId), trackId)
+			exec(success, error, "tv.megacubo.player", "subtitleTrack", [trackId])
+		} else {
+			console.error('BAD SUBTITLE TRACK VALUE '+ typeof(trackId), trackId)
+		}
+    }
+    self.audioTracks = function() {
+        return Array.isArray(self._audioTracks) ? self._audioTracks : [{id: 0, name: 'Default'}]
+    }
+    self.subtitleTracks = function() {
+        return Array.isArray(self._subtitleTracks) ? self._subtitleTracks : []
+    }
     self.onTrackingEvent = e => {
-        if(e.data && ['{', '"'].indexOf(e.data.charAt(0)) != -1){
+        if(e.data && ['{', '[', '"'].indexOf(e.data.charAt(0)) != -1){
             e.data = JSON.parse(e.data)
         }
         self.emit(e.type, e.data)
@@ -109,6 +133,12 @@ function MegacuboPlayer() {
         self.on('appMetrics', e => {
             self.appMetrics = e
             self.emit('appmetrics', e)
+        })
+        self.on('tracks', e => {
+            self._audioTracks = e.filter(e => e.type.indexOf('audio') != -1)
+            self._subtitleTracks = e.filter(e => e.type.indexOf('text') != -1)
+            self.emit('audioTracks', self._audioTracks)
+            self.emit('subtitleTracks', self._subtitleTracks)
         })
         self.on('networkIp', e => {
             self.networkIp = e
