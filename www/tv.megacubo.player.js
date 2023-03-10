@@ -70,7 +70,11 @@ function MegacuboPlayer() {
     }
     self.seek = function(to, success, error) {
         clearTimeout(self.seekTimer)
-        exec(success, error, "tv.megacubo.player", "seek", [to])
+        //exec(success, error, "tv.megacubo.player", "seek", [to])
+
+        const by = to - self.currentTime
+        exec(success, error, "tv.megacubo.player", "seekBy", [by])
+
         self.timeUpdateLocked = true
         self.seekTime = setTimeout(() => {
             self.timeUpdateLocked = false
@@ -92,6 +96,13 @@ function MegacuboPlayer() {
 			}
 		} else {
 			console.error('BAD PLAYBACK RATE VALUE '+ typeof(rate), rate)
+		}
+    }
+    self.setBackBuffer = function(backBufferMs, success, error) {
+        if(typeof(backBufferMs) == 'number'){
+			exec(success, error, "tv.megacubo.player", "setBackBuffer", [backBufferMs])
+		} else {
+			console.error('BAD BACKBUFFER VALUE '+ typeof(backBufferMs), backBufferMs)
 		}
     }
     self.audioTrack = function(trackId, success, error) {
@@ -151,7 +162,7 @@ function MegacuboPlayer() {
             }
         })
         self.on('time', e => {
-            e.currentTime = e.currentTime / 1000;
+            e.currentTime = Math.max(e.currentTime / 1000, 0);
             e.duration = e.duration / 1000;
             if(e.duration < e.currentTime){
                 e.duration = e.currentTime + 1;

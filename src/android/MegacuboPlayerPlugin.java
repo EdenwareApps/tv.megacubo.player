@@ -44,6 +44,7 @@ import com.google.android.exoplayer2.util.Util;
 import com.google.android.exoplayer2.SeekParameters;
 import com.google.android.exoplayer2.PlaybackParameters;
 import com.google.android.exoplayer2.PlaybackException;
+import com.google.android.exoplayer2.DefaultLoadControl;
 import com.google.android.exoplayer2.ui.PlayerView;
 import com.google.android.exoplayer2.ui.AspectRatioFrameLayout;
 import com.google.android.exoplayer2.upstream.DefaultAllocator;
@@ -52,7 +53,13 @@ import com.google.android.exoplayer2.upstream.DefaultDataSource;
 import com.google.android.exoplayer2.upstream.DefaultDataSourceFactory;
 import com.google.android.exoplayer2.upstream.DefaultHttpDataSource;
 import com.google.android.exoplayer2.upstream.HttpDataSource;
+import com.google.android.exoplayer2.upstream.BandwidthMeter;
+import com.google.android.exoplayer2.upstream.DefaultBandwidthMeter;
 import com.google.android.exoplayer2.extractor.DefaultExtractorsFactory;
+import com.google.android.exoplayer2.extractor.mp3.Mp3Extractor;
+import com.google.android.exoplayer2.extractor.ts.AdtsExtractor;
+import com.google.android.exoplayer2.extractor.ts.TsExtractor;
+import com.google.android.exoplayer2.extractor.ts.DefaultTsPayloadReaderFactory;
 import com.google.android.exoplayer2.MediaItem;
 import com.google.android.exoplayer2.source.MediaSource;
 import com.google.android.exoplayer2.source.ProgressiveMediaSource;
@@ -60,10 +67,12 @@ import com.google.android.exoplayer2.source.DefaultMediaSourceFactory;
 import com.google.android.exoplayer2.source.hls.HlsMediaSource;
 import com.google.android.exoplayer2.source.TrackGroup;
 import com.google.android.exoplayer2.source.TrackGroupArray;
+import com.google.android.exoplayer2.trackselection.TrackSelector;
 import com.google.android.exoplayer2.trackselection.TrackSelection;
 import com.google.android.exoplayer2.trackselection.TrackSelectionArray;
 import com.google.android.exoplayer2.trackselection.TrackSelectionOverride;
 import com.google.android.exoplayer2.trackselection.DefaultTrackSelector;
+import com.google.android.exoplayer2.trackselection.AdaptiveTrackSelection;
 import com.google.android.exoplayer2.trackselection.MappingTrackSelector.MappedTrackInfo;
 import com.google.android.exoplayer2.ui.DefaultTrackNameProvider;
 import com.google.android.exoplayer2.video.VideoSize;
@@ -135,6 +144,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     private String currentURL = "";
     private String currentMediatype = "";
     private String currentMimetype = "";
+    private boolean currentMimetypeIsHLS;
     private String currentCookie = "";
     private float currentPlaybackRate = 1;
     private boolean checkedMiUi = false;
@@ -147,6 +157,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     private int videoForcedWidth = 1280;
     private int videoForcedHeight = 720;
 	private int hlsMinPlaylistWindowTime = 6;
+	private int backBuffer = (1000 * 60) * 10;
     private float videoForcedRatio = 1.7777777777777777f; // 16:9
 
 	private String TAG = "MegacuboPlayerPlugin";
@@ -316,6 +327,12 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                                 MCResume();
                             } else if (action.equals("seek")) {
                                 MCSeek(args.getInt(0) * 1000);
+                            } else if (action.equals("seekBy")) {
+								Log.e(TAG, "MCSeekBy("+ (args.getInt(0) * 1000) +")");
+                                MCSeekBy(args.getInt(0) * 1000);
+                            } else if (action.equals("setBackBuffer")) {
+								Log.e(TAG, "setBackBuffer to "+ args.getInt(0) +"secs");
+                                backBuffer = args.getInt(0) * 1000;
                             } else if (action.equals("stop")) {
                                 MCStop();
                             } else if(action.equals("mute")) {            
@@ -463,7 +480,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 			long position = data.get("position");
 			long offset = data.get("offset");
 			Log.d(TAG, "seeking to " + to + "ms, " + player.getCurrentPosition() + ", "+ position + ", "+ offset + ", " + duration);
-			if(currentMediatype.equals("live")){
+			if(currentMimetypeIsHLS){
 				long rawPos = data.get("rawPosition");				
 				long maxPos = rawPos + (duration - position); // beyound that, use TIME_UNSET
 				long diff = to - position;
@@ -483,19 +500,32 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
         }
     }
 
+    public void SeekBy(long to){ // TODO, on live streams, we're unable to seek back too much, why?!        
+        if(isActive){
+			if(!currentMimetypeIsHLS && currentMediatype.equals("live")){
+				// ProgressiveMediaSource can't seek live content apparently
+				return;
+			}
+			long position = player.getCurrentPosition();
+			to = to + position;
+			if(position < 0){
+				position = 0;
+			}
+			Log.d(TAG, "seeking by " + to + "ms, " + position);
+			player.seekTo(to);
+			SendTimeData(true);
+        }
+    }
+
     public boolean isPlaybackStalled(){
-		if(isActive && currentPlayerState.equals("loading") && currentMediatype.equals("live")){
+		if(isActive && currentPlayerState.equals("loading") && currentMimetypeIsHLS){
 			long now = System.currentTimeMillis();
 			long elapsed = (now - videoLoadingSince) / 1000;
-			if(elapsed < 5){
-				//Log.d(TAG, "isPlaybackStalled NO loading for less than " + elapsed + " seconds");
-			} else {
+			if(elapsed >= 5){
 				int remainingTime = GetRemainingTime();
 				//Log.d(TAG, "isPlaybackStalled MAYBE " + remainingTime);
 				return remainingTime > hlsMinPlaylistWindowTime;
 			}
-        } else {			
-			//Log.d(TAG, "isPlaybackStalled NO " + isActive + " | " + currentPlayerState + " | " + currentMediatype);
         }
         return false;
     }
@@ -662,40 +692,10 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
         }
     }
 
-    public MediaSource getMediaSource(String u, String mimetype, String cookie) {
-        MediaItem mediaItem = new MediaItem.Builder()
-            .setUri(Uri.parse(u))
-            .setMimeType(mimetype)
-			.setLiveConfiguration(
-				new MediaItem.LiveConfiguration.Builder()
-					.setMinPlaybackSpeed(1.0f)
-					.setMaxPlaybackSpeed(1.0f)
-					.build())
-            .build();
-        Log.d(TAG, "MEDIASOURCE " + u + ", " + mimetype + ", " + ua + ", " + cookie);
-        
-        Map<String, String> headers = new HashMap<String, String>(1);
-        headers.put("Cookie", cookie);
-
-		HttpDataSource.Factory httpDataSource = new DefaultHttpDataSource.Factory()
-			.setAllowCrossProtocolRedirects(true)
-			.setUserAgent(ua)
-            .setConnectTimeoutMs(10000)
-            .setReadTimeoutMs(10000)
-            .setAllowCrossProtocolRedirects(true)
-            .setDefaultRequestProperties(headers);
-		DefaultDataSource.Factory dataSourceFactory = new DefaultDataSource.Factory(context, httpDataSource);
-        if(mimetype.toLowerCase().indexOf("mpegurl") != -1){
-			HlsMediaSource hlsMediaSource = new HlsMediaSource.Factory(dataSourceFactory).createMediaSource(MediaItem.fromUri(u));
-			return hlsMediaSource;
-        } else {
-            return new DefaultMediaSourceFactory(dataSourceFactory).createMediaSource(mediaItem);
-        }
-    }
-
     private void MCLoad(String uri, String mimetype, String cookie, String mediatype, final CallbackContext callbackContext) {
         currentURL = uri;
         currentMimetype = mimetype;
+        currentMimetypeIsHLS = mimetype.toLowerCase().indexOf("mpegurl") != -1;
         currentMediatype = mediatype;
         currentCookie = cookie;
         
@@ -723,7 +723,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
         initMegacuboPlayer();
         // player!!.audioAttributes = AudioAttributes.Builder().setFlags(C.FLAG_AUDIBILITY_ENFORCED).setUsage(C.USAGE_NOTIFICATION_RINGTONE).setContentType(C.CONTENT_TYPE_SPEECH).build()
         MediaSource mediaSource = getMediaSource(currentURL, currentMimetype, currentCookie);
-        if(resetPosition == true){
+        if(resetPosition){
 			long startFromZero = 0;
 			player.setMediaSource(mediaSource, startFromZero);
 		} else {
@@ -754,13 +754,13 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 
 		@Override
 		public void onPlayerError(PlaybackException error) {
+            player.setPlayWhenReady(false);
 			Map<String, Long> data = GetTimeData();
 			String what = "";
 			String errStr = error.toString();
 			String playbackPosition = data.get("position") +"-"+ data.get("duration");
-			boolean isLive = currentMediatype.equals("live");
 			int errorCount = increaseErrorCounter();
-			if(errorCount >= 3){
+			if(errorCount >= 4){
 				Log.e(TAG, "onPlayerError (fatal, "+ errorCount +" errors) " + errStr +" "+ what +" "+ playbackPosition);
 				sendEvent("error", "ExoPlayer error " + what, false);
 				MCStop();
@@ -768,69 +768,48 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 			}
 			String errStack = Log.getStackTraceString(error); 
 			String errorFullStr = errStr + " " + what + " " + errStack;
-			if(isLive && ( 
-				error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW || 
+			boolean shouldReopen = (
 				errorFullStr.indexOf("PlaylistStuck") != -1 || 
 				errorFullStr.indexOf("Most likely not a Transport Stream") != -1 ||
 				errorFullStr.indexOf("PlaylistResetException") != -1 || 
 				errorFullStr.indexOf("Unable to connect") != -1 || 
 				errorFullStr.indexOf("Response code: 404") != -1
-			)){
-				sendEvent("state", "loading", false);
-				SendTimeData(true); // send last valid data to ui
-				
-				sendEventEnabled = false;
-				playerView.setKeepContentOnPlayerReset(true);
-				
+			);
+			sendEvent("state", "loading", false);
+			SendTimeData(true); // send last valid data to ui			
+			sendEventEnabled = false;
+			playerView.setKeepContentOnPlayerReset(true);	
+			if (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
+    			player.seekToDefaultPosition();
+    			player.prepare();
+  			} else if(errorCount >= 3 || shouldReopen){
 				if(player != null){
 					player.stop();
 				}
 				MCPrepare(true);
-				setTimeout(() -> {
-					sendEventEnabled = true;
-					if(currentPlayerState.equals("loading")){
-						cordova.getActivity().runOnUiThread(new Runnable() {
-							@Override
-							public void run() {
-								fixStalledPlayback();
-							}
-						});
-					} else {
-						sendEvent("state", currentPlayerState, false);
-					}
-				}, 100);
-				Log.e(TAG, "onPlayerError (auto-recovering) " + errStr + " " + what + "  "+ playbackPosition);
-			} else if(!isLive || (
-				errorFullStr.indexOf("Renderer error") != -1 || 
-				errorFullStr.indexOf("InvalidResponseCode") != -1
-			)) {
-				
-				sendEvent("state", "loading", false);
-				SendTimeData(true); // send last valid data to ui
-				
-				sendEventEnabled = false;
-				playerView.setKeepContentOnPlayerReset(true);
-				
-				player.retry();
-				setTimeout(() -> {            
-					sendEventEnabled = true;
-					if(currentPlayerState.equals("loading")){
-						cordova.getActivity().runOnUiThread(new Runnable() {
-							@Override
-							public void run() {
-								fixStalledPlayback();
-							}
-						});
-					} else {
-						sendEvent("state", currentPlayerState, false);
-					}
-				}, 100);
-				Log.e(TAG, "*onPlayerError (auto-recovering) " + errStr + " " + what +" "+ playbackPosition);
+			} else if(errorCount >= 2){
+				if(player != null){
+					player.seekToDefaultPosition();
+					player.prepare();
+				}
 			} else {
-				Log.e(TAG, "*onPlayerError (fatal) " + errStr +" "+ what +" "+ playbackPosition);
-				sendEvent("error", "ExoPlayer error " + what, false);
-				MCStop();
-			}
+				player.retry();
+			}			
+            player.setPlayWhenReady(true);
+			setTimeout(() -> {
+				sendEventEnabled = true;
+				if(currentPlayerState.equals("loading")){
+					cordova.getActivity().runOnUiThread(new Runnable() {
+						@Override
+						public void run() {
+							fixStalledPlayback();
+						}
+					});
+				} else {
+					sendEvent("state", currentPlayerState, false);
+				}
+			}, 100);
+			Log.e(TAG, "onPlayerError (auto-recovering) " + errStr + " " + what + "  "+ playbackPosition);
 		}
 
 		@Override
@@ -1005,6 +984,48 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 		}
 	}
 
+    public MediaSource getMediaSource(String u, String mimetype, String cookie) {
+        MediaItem mediaItem = new MediaItem.Builder()
+            .setUri(Uri.parse(u))
+            .setMimeType(mimetype)
+			.setLiveConfiguration(
+				new MediaItem.LiveConfiguration.Builder()
+					.setMinPlaybackSpeed(1.0f)
+					.setMaxPlaybackSpeed(1.0f)
+					.build())
+            .build();
+        Log.d(TAG, "MEDIASOURCE " + u + ", " + mimetype + ", " + ua + ", " + cookie);
+        
+        Map<String, String> headers = new HashMap<String, String>(1);
+        headers.put("Cookie", cookie);
+
+		HttpDataSource.Factory httpDataSource = new DefaultHttpDataSource.Factory()
+			.setUserAgent(ua)
+            .setReadTimeoutMs(10000)
+            .setConnectTimeoutMs(10000)
+            .setAllowCrossProtocolRedirects(true)
+            .setDefaultRequestProperties(headers)
+			.setAllowCrossProtocolRedirects(true);
+		DefaultDataSource.Factory dataSourceFactory = new DefaultDataSource.Factory(context, httpDataSource);
+        if(currentMimetypeIsHLS){
+			HlsMediaSource hlsMediaSource = new HlsMediaSource.Factory(dataSourceFactory).createMediaSource(mediaItem);
+			return hlsMediaSource;
+        } else {
+			DefaultExtractorsFactory extractorsFactory = new DefaultExtractorsFactory();
+			extractorsFactory.setMp3ExtractorFlags(Mp3Extractor.FLAG_ENABLE_CONSTANT_BITRATE_SEEKING_ALWAYS);
+			extractorsFactory.setAdtsExtractorFlags(AdtsExtractor.FLAG_ENABLE_CONSTANT_BITRATE_SEEKING_ALWAYS);
+			extractorsFactory.setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES);
+			extractorsFactory.setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS);
+			extractorsFactory.setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_ENABLE_HDMV_DTS_AUDIO_STREAMS);
+			extractorsFactory.setTsExtractorMode​(TsExtractor.MODE_SINGLE_PMT);
+			extractorsFactory.setConstantBitrateSeekingEnabled(true);
+			ProgressiveMediaSource progressiveMediaSource =
+				new ProgressiveMediaSource.Factory(dataSourceFactory, extractorsFactory)
+					.createMediaSource(mediaItem);
+			return progressiveMediaSource;
+        }
+    }
+
     private void initMegacuboPlayer() {
         if(!isActive){
             isActive = true;
@@ -1018,14 +1039,25 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 					playerContainer.addView(playerView);
 				}						
 				if(player == null){
-					trackSelector = new DefaultTrackSelector(context);     
+					BandwidthMeter bandwidthMeter = new DefaultBandwidthMeter();
+					AdaptiveTrackSelection.Factory trackSelectionFactory = new AdaptiveTrackSelection.Factory();
+					TrackSelector trackSelector = new DefaultTrackSelector(context, trackSelectionFactory);   
+					/*
 					trackSelector.setParameters(
 						trackSelector.buildUponParameters().setAllowVideoMixedMimeTypeAdaptiveness(true)
 					);
-					player = new ExoPlayer.Builder(context).setTrackSelector(trackSelector).build();  
+        			*/
+					DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
+        				.setAllocator(new DefaultAllocator(true, C.DEFAULT_BUFFER_SEGMENT_SIZE))
+            			.setBackBuffer(backBuffer, true)
+            			.build();
+					player = new ExoPlayer.Builder(context)
+						.setBandwidthMeter(bandwidthMeter)
+						.setTrackSelector(trackSelector)
+						.setLoadControl(loadControl)
+						.build();
 					playerView.setPlayer(player);
 					player.setHandleAudioBecomingNoisy(true);
-					player.setHandleWakeLock(true);
 					player.setSeekParameters(SeekParameters.CLOSEST_SYNC);
 					player.setVideoScalingMode(C.VIDEO_SCALING_MODE_SCALE_TO_FIT);
 					playerView.setUseController(false); 
@@ -1095,6 +1127,12 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     private void MCSeek(long to) {   
         if(isActive){
             Seek(to, null);
+        }
+    }
+
+    private void MCSeekBy(long to) {   
+        if(isActive){
+            SeekBy(to);
         }
     }
 
