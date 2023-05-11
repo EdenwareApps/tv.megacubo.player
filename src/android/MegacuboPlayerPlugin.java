@@ -778,7 +778,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 			sendEvent("state", "loading", false);
 			SendTimeData(true); // send last valid data to ui			
 			sendEventEnabled = false;
-			playerView.setKeepContentOnPlayerReset(true);	
+			playerView.setKeepContentOnPlayerReset(true);
 			if (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
     			player.seekToDefaultPosition();
     			player.prepare();
@@ -798,6 +798,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
             player.setPlayWhenReady(true);
 			setTimeout(() -> {
 				sendEventEnabled = true;
+				sendEvent("state", currentPlayerState, false);
 				if(currentPlayerState.equals("loading")){
 					cordova.getActivity().runOnUiThread(new Runnable() {
 						@Override
@@ -805,8 +806,6 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 							fixStalledPlayback();
 						}
 					});
-				} else {
-					sendEvent("state", currentPlayerState, false);
 				}
 			}, 100);
 			Log.e(TAG, "onPlayerError (auto-recovering) " + errStr + " " + what + "  "+ playbackPosition);
