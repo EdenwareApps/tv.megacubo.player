@@ -67,6 +67,8 @@ import com.google.android.exoplayer2.source.DefaultMediaSourceFactory;
 import com.google.android.exoplayer2.source.hls.HlsMediaSource;
 import com.google.android.exoplayer2.source.TrackGroup;
 import com.google.android.exoplayer2.source.TrackGroupArray;
+import com.google.android.exoplayer2.source.MergingMediaSource;
+import com.google.android.exoplayer2.source.SingleSampleMediaSource;
 import com.google.android.exoplayer2.trackselection.TrackSelector;
 import com.google.android.exoplayer2.trackselection.TrackSelection;
 import com.google.android.exoplayer2.trackselection.TrackSelectionArray;
@@ -76,6 +78,7 @@ import com.google.android.exoplayer2.trackselection.AdaptiveTrackSelection;
 import com.google.android.exoplayer2.trackselection.MappingTrackSelector.MappedTrackInfo;
 import com.google.android.exoplayer2.ui.DefaultTrackNameProvider;
 import com.google.android.exoplayer2.video.VideoSize;
+import com.google.android.exoplayer2.util.MimeTypes;
 
 import androidx.appcompat.app.AppCompatDelegate;
 
@@ -724,7 +727,24 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 		currentPlaybackRate = 1;
         initMegacuboPlayer();
         // player!!.audioAttributes = AudioAttributes.Builder().setFlags(C.FLAG_AUDIBILITY_ENFORCED).setUsage(C.USAGE_NOTIFICATION_RINGTONE).setContentType(C.CONTENT_TYPE_SPEECH).build()
-        MediaSource mediaSource = getMediaSource(currentURL, currentMimetype, currentSubtitle, currentCookie);
+        MediaSource mediaSource = getMediaSource(currentURL, currentMimetype, currentCookie);
+
+		if (currentSubtitle != null && !currentSubtitle.isEmpty()) {
+			String[] currentSubtitles = currentSubtitle.split("§");
+			for (String url : currentSubtitles) {
+				Uri subtitleUri = Uri.parse(url);
+				String language = subtitleUri.getQueryParameter("lang");
+				String label = subtitleUri.getQueryParameter("label");
+				if (language != null && label != null) {
+					DataSource.Factory dataSourceFactory = new DefaultDataSourceFactory(context, Util.getUserAgent(context, ua));
+					MediaItem.Subtitle srt = new MediaItem.Subtitle(subtitleUri, MimeTypes.TEXT_VTT, "en-US", C.SELECTION_FLAG_AUTOSELECT, C.ROLE_FLAG_CAPTION, "English");
+            		SingleSampleMediaSource subtitleSource = new SingleSampleMediaSource.Factory(dataSourceFactory).createMediaSource(srt, C.TIME_UNSET);
+           			mediaSource = new MergingMediaSource(mediaSource, subtitleSource);
+				}
+			}
+		}
+    	
+
         if(resetPosition){
 			long startFromZero = 0;
 			player.setMediaSource(mediaSource, startFromZero);
@@ -985,32 +1005,17 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 		}
 	}
 
-    public MediaSource getMediaSource(String u, String mimetype, String subtitleUrl, String cookie) {
-        MediaItem.Builder mediaItemBuilder = new MediaItem.Builder()
+    public MediaSource getMediaSource(String u, String mimetype, String cookie) {
+        MediaItem mediaItem = new MediaItem.Builder()
             .setUri(Uri.parse(u))
             .setMimeType(mimetype)
 			.setLiveConfiguration(
 				new MediaItem.LiveConfiguration.Builder()
 					.setMinPlaybackSpeed(1.0f)
 					.setMaxPlaybackSpeed(1.0f)
-					.build());
-        Log.d(TAG, "MEDIASOURCE " + u + ", " + mimetype + ", " + ua + ", " + cookie + ", " + subtitleUrl);
+					.build()).build();
+        Log.d(TAG, "MEDIASOURCE " + u + ", " + mimetype + ", " + ua + ", " + cookie);
         
-		if (subtitleUrl != null && !subtitleUrl.isEmpty()) {
-			String[] subtitleUrls = subtitleUrl.split("§");
-			for (String url : subtitleUrls) {
-				Uri subtitleUri = Uri.parse(url);
-				String language = subtitleUri.getQueryParameter("lang");
-				String label = subtitleUri.getQueryParameter("label");
-				if (language != null && label != null) {
-					mediaItemBuilder.addSubtitles(subtitleUri, MimeTypes.APPLICATION_SUBRIP)
-						.setSubtitlesLanguage(language)
-						.setSubtitlesLabel(label);
-				}
-			}
-		}
-    	MediaItem mediaItem = mediaItemBuilder.build();
-
         Map<String, String> headers = new HashMap<String, String>(1);
         headers.put("Cookie", cookie);
 
