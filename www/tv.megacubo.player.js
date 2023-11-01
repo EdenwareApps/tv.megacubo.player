@@ -1,6 +1,6 @@
 var exec = require('cordova/exec')
 function MegacuboPlayer() {
-    var self = this;
+    var self = this
     self.appMetrics = {top:0, bottom: 0, right: 0, left: 0};
     self.on = function (type, cb){
         if(typeof(self.events[type]) == 'undefined'){
@@ -31,12 +31,12 @@ function MegacuboPlayer() {
             })
         }
     }
-    self.play = function(uri, mimetype, cookie, mediatype, success, error) {
+    self.play = function(uri, mimetype, subtitles, cookie, mediatype, success, error) {
         self.currentTime = 0;
         self.duration = 0;
         self._audioTracks = null;
         self._subtitleTracks = null;
-        exec(success, error, "tv.megacubo.player", "play", [uri, mimetype, cookie, mediatype])
+        exec(success, error, "tv.megacubo.player", "play", [uri, mimetype, subtitles, cookie, mediatype])
     }
     self.volume = function(level, success, error) {
         exec(success, error, "tv.megacubo.player", "volume", [level])

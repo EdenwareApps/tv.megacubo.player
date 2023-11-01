@@ -146,6 +146,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     private String currentMimetype = "";
     private boolean currentMimetypeIsHLS;
     private String currentCookie = "";
+    private String currentSubtitle = "";
     private float currentPlaybackRate = 1;
     private boolean checkedMiUi = false;
     private boolean viewAdded = false;
@@ -298,7 +299,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                     public void run() {
                         try {       
                             uiVisible = true;
-                            MCLoad(args.getString(0), args.getString(1), args.getString(2), args.getString(3), callbackContext);
+                            MCLoad(args.getString(0), args.getString(1), args.getString(2), args.getString(3), args.getString(4), callbackContext);
 							if(!checkedMiUi){
 								checkedMiUi = true;
 								String MiUi = isMiUi() ? "true" : "false";
@@ -692,11 +693,12 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
         }
     }
 
-    private void MCLoad(String uri, String mimetype, String cookie, String mediatype, final CallbackContext callbackContext) {
+    private void MCLoad(String uri, String mimetype, String subtitles, String cookie, String mediatype, final CallbackContext callbackContext) {
         currentURL = uri;
         currentMimetype = mimetype;
         currentMimetypeIsHLS = mimetype.toLowerCase().indexOf("mpegurl") != -1;
         currentMediatype = mediatype;
+		currentSubtitle = subtitles;
         currentCookie = cookie;
         
         if(playerView != null){
@@ -722,7 +724,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 		currentPlaybackRate = 1;
         initMegacuboPlayer();
         // player!!.audioAttributes = AudioAttributes.Builder().setFlags(C.FLAG_AUDIBILITY_ENFORCED).setUsage(C.USAGE_NOTIFICATION_RINGTONE).setContentType(C.CONTENT_TYPE_SPEECH).build()
-        MediaSource mediaSource = getMediaSource(currentURL, currentMimetype, currentCookie);
+        MediaSource mediaSource = getMediaSource(currentURL, currentMimetype, currentSubtitle, currentCookie);
         if(resetPosition){
 			long startFromZero = 0;
 			player.setMediaSource(mediaSource, startFromZero);
@@ -983,18 +985,32 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 		}
 	}
 
-    public MediaSource getMediaSource(String u, String mimetype, String cookie) {
-        MediaItem mediaItem = new MediaItem.Builder()
+    public MediaSource getMediaSource(String u, String mimetype, String subtitleUrl, String cookie) {
+        MediaItem.Builder mediaItemBuilder = new MediaItem.Builder()
             .setUri(Uri.parse(u))
             .setMimeType(mimetype)
 			.setLiveConfiguration(
 				new MediaItem.LiveConfiguration.Builder()
 					.setMinPlaybackSpeed(1.0f)
 					.setMaxPlaybackSpeed(1.0f)
-					.build())
-            .build();
-        Log.d(TAG, "MEDIASOURCE " + u + ", " + mimetype + ", " + ua + ", " + cookie);
+					.build());
+        Log.d(TAG, "MEDIASOURCE " + u + ", " + mimetype + ", " + ua + ", " + cookie + ", " + subtitleUrl);
         
+		if (subtitleUrl != null && !subtitleUrl.isEmpty()) {
+			String[] subtitleUrls = subtitleUrl.split("§");
+			for (String url : subtitleUrls) {
+				Uri subtitleUri = Uri.parse(url);
+				String language = subtitleUri.getQueryParameter("lang");
+				String label = subtitleUri.getQueryParameter("label");
+				if (language != null && label != null) {
+					mediaItemBuilder.addSubtitles(subtitleUri, MimeTypes.APPLICATION_SUBRIP)
+						.setSubtitlesLanguage(language)
+						.setSubtitlesLabel(label);
+				}
+			}
+		}
+    	MediaItem mediaItem = mediaItemBuilder.build();
+
         Map<String, String> headers = new HashMap<String, String>(1);
         headers.put("Cookie", cookie);
 
