@@ -114,7 +114,8 @@ function MegacuboPlayer() {
 		}
     }
     self.subtitleTrack = function(trackId, success, error) {
-        if(typeof(trackId) != 'undefined' && Array.isArray(self._subtitleTracks) && self._subtitleTracks.length > 1){
+        console.error('SUBTITLE TRACK CHANGE '+JSON.stringify({trackId, tracks: self._subtitleTracks}))
+        if(typeof(trackId) != 'undefined' && Array.isArray(self._subtitleTracks) && self._subtitleTracks.length >= 1){
 			console.error('SUBTITLE TRACK '+ typeof(trackId), trackId)
 			exec(success, error, "tv.megacubo.player", "subtitleTrack", [trackId])
 		} else {
@@ -146,6 +147,7 @@ function MegacuboPlayer() {
             self.emit('appmetrics', e)
         })
         self.on('tracks', e => {
+            console.error('TRACKS CHANGED '+JSON.stringify(e))
             self._audioTracks = e.filter(e => e.type.indexOf('audio') != -1)
             self._subtitleTracks = e.filter(e => e.type.indexOf('text') != -1)
             self.emit('audioTracks', self._audioTracks)
