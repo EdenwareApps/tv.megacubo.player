@@ -3,7 +3,7 @@
     xmlns="http://apache.org/cordova/ns/plugins/1.0" 
     xmlns:android="http://schemas.android.com/apk/res/android"
     id="tv.megacubo.player" 
-    version="0.2.8">
+    version="0.2.9">
 
     <name>tv.megacubo.player</name>
     <js-module name="tv.megacubo.player" src="www/tv.megacubo.player.js">

@@ -1,7 +1,7 @@
 var exec = require('cordova/exec')
 function MegacuboPlayer() {
     var self = this
-    self.appMetrics = {top:0, bottom: 0, right: 0, left: 0};
+    self.appMetrics = {top: 0, bottom: 0, right: 0, left: 0};
     self.on = function (type, cb){
         if(typeof(self.events[type]) == 'undefined'){
             self.events[type] = []
@@ -70,11 +70,7 @@ function MegacuboPlayer() {
     }
     self.seek = function(to, success, error) {
         clearTimeout(self.seekTimer)
-        //exec(success, error, "tv.megacubo.player", "seek", [to])
-
-        const by = to - self.currentTime
-        exec(success, error, "tv.megacubo.player", "seekBy", [by])
-
+        exec(success, error, "tv.megacubo.player", "seek", [to])
         self.timeUpdateLocked = true
         self.seekTime = setTimeout(() => {
             self.timeUpdateLocked = false
