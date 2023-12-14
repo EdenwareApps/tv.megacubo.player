@@ -70,9 +70,10 @@ function MegacuboPlayer() {
     }
     self.seek = function(to, success, error) {
         clearTimeout(self.seekTimer)
-        exec(success, error, "tv.megacubo.player", "seek", [to])
+        const by = to - self.currentTime
+        exec(success, error, "tv.megacubo.player", "seekBy", [by])
         self.timeUpdateLocked = true
-        self.seekTime = setTimeout(() => {
+        self.seekTimer = setTimeout(() => {
             self.timeUpdateLocked = false
         }, 2000)
     }

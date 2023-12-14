@@ -148,6 +148,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     private String currentMimetype = "";
     private boolean currentMimetypeIsHLS;
     private boolean currentMimetypeIsDash;
+    private boolean inLiveStream;
     private String currentCookie = "";
     private String currentSubtitle = "";
     private float currentPlaybackRate = 1;
@@ -156,7 +157,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     private boolean sendEventEnabled = true;
     private long lastVideoTime = -1;
     private long videoLoadingSince = -1;
-    private long currentStreamStartMs = 0;
+    private long currentStreamStartMs = -1;
     private int videoWidth = 1280;
     private int videoHeight = 720;
     private int videoForcedWidth = 1280;
@@ -330,8 +331,9 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                                 MCPause();
                             } else if (action.equals("resume")) {
                                 MCResume();
-                            } else if (action.equals("seek")) {
-                                MCSeek(args.getInt(0) * 1000);
+                            } else if (action.equals("seekBy")) {
+								Log.e(TAG, "MCSeekBy("+ (args.getInt(0) * 1000) +")");
+                                MCSeekBy(args.getInt(0) * 1000);
                             } else if (action.equals("setBackBuffer")) {
 								Log.e(TAG, "setBackBuffer to "+ args.getInt(0) +"secs");
                                 backBuffer = args.getInt(0) * 1000;
@@ -473,32 +475,6 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
         sendEvent("appMetrics", "{\"top\":" + top + ",\"bottom\":" + bottom + ",\"right\":" + right + ",\"left\":" + left + "}", true);
     }
 
-    public void Seek(long to){ // TODO, on live streams, we're unable to seek back too much, why?!        
-        if(isActive){
-			if(player.isCurrentWindowLive()) {
-				Timeline timeline = player.getCurrentTimeline();
-				Timeline.Window window = new Timeline.Window();
-				int windowIndex = player.getCurrentWindowIndex();
-
-				timeline.getWindow(windowIndex, window);
-
-				long windowStartMs = window.windowStartTimeMs;
-				if(currentStreamStartMs == 0) {
-					currentStreamStartMs = windowStartMs;
-				}
-				long absTo = currentStreamStartMs + to;
-				if(absTo < windowStartMs) {
-					absTo = windowStartMs;
-				}
-				to = absTo - windowStartMs;
-			}
-			player.seekTo(to);
-			Map<String, Long> data = GetTimeData();
-			Log.d(TAG, "seeked to "+ data.get("position") +" (expected: "+ to +")");
-			SendTimeData(true);
-        }
-    }
-
     public boolean isPlaybackStalled(){
 		if(isActive && currentPlayerState.equals("loading") && (currentMimetypeIsHLS || currentMimetypeIsDash)){
 			long now = System.currentTimeMillis();
@@ -532,7 +508,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 				newPosition = maxNewPosition;
 			}			
 			Log.d(TAG, "nudging currentTime, from "+ position + "ms to "+ newPosition +"ms, duration="+ duration + ", getDuration="+ player.getDuration());
-			Seek(newPosition);
+			player.seekTo(newPosition);
 			Log.d(TAG, "nudged currentTime " + player.getCurrentPosition());
 		}
 		setTimeout(() -> {                            
@@ -571,24 +547,26 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 			}, recheckAfter);
 		}
     }
-    
+
     public Map<String, Long> GetTimeData(){
 		Map<String, Long> m = new HashMap<String, Long>();
-		long currentPosition = player.getCurrentPosition(); 
-		long duration = player.getDuration();
-		if(player.isCurrentWindowLive()) {
-			Timeline timeline = player.getCurrentTimeline();
-			Timeline.Window window = new Timeline.Window();
-			int windowIndex = player.getCurrentWindowIndex();
-
-			timeline.getWindow(windowIndex, window);
-
-			long windowStartMs = window.windowStartTimeMs;
-			if(currentStreamStartMs == 0) {
-				currentStreamStartMs = windowStartMs;
+		long rawPosition = player.getCurrentPosition(); 
+		long currentPosition = rawPosition; 
+		long duration = 0;         
+		long offset = 0;
+		if(currentMediatype.equals("live")){
+			Timeline timeline = player.getCurrentTimeline(); 
+			if (!timeline.isEmpty()) {
+				offset = timeline.getPeriod(player.getCurrentPeriodIndex(), period).getPositionInWindowMs();
+				currentPosition -= offset;	
 			}
-			currentPosition = (currentPosition + windowStartMs) - currentStreamStartMs;
-			duration = (duration + windowStartMs) - currentStreamStartMs;
+			duration = currentPosition + player.getTotalBufferedDuration();
+			long pduration = player.getDuration();
+			if(pduration > duration){
+				duration = pduration;
+			}
+		} else {
+			duration = player.getDuration();
 		}
 		if(duration < currentPosition){
 			duration = currentPosition;
@@ -598,7 +576,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 		m.put("duration", duration);
 		return m;
 	}
-
+    
     public void SendTimeData(boolean force){        
         if(isActive && sendEventEnabled){
             Map<String, Long> data = GetTimeData();
@@ -673,10 +651,11 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
         currentMimetype = mimetype;
         currentMimetypeIsHLS = mimetype.toLowerCase().indexOf("mpegurl") != -1;
         currentMimetypeIsDash = mimetype.toLowerCase().indexOf("dash") != -1;
+        inLiveStream = mediatype.equals("live");
         currentMediatype = mediatype;
 		currentSubtitle = subtitles;
         currentCookie = cookie;
-        
+
         if(playerView != null){
 			playerView.setKeepContentOnPlayerReset(false);
 		}
@@ -687,6 +666,54 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
         pluginResult.setKeepCallback(false);
         callbackContext.sendPluginResult(pluginResult);
     }
+
+	public void MCSeekBy(long toMsRelativeToCurrentTime) {
+		if (!isActive){
+			return;
+		}
+		
+		// Get the current window index
+		Timeline timeline = player.getCurrentTimeline();
+		int windowIndex = player.getCurrentWindowIndex();
+
+		Log.d(TAG, "Current window is "+ windowIndex);
+
+		// Calculate the relative playback position
+		long seekPosition = player.getCurrentPosition() + toMsRelativeToCurrentTime;
+
+		// Loop through previous windows while seekPosition is negative and windowIndex is valid
+		while (seekPosition < 0 && windowIndex > 0) {
+			windowIndex--;
+
+			// Get the duration of the previous window
+			Timeline.Window window = new Timeline.Window();
+			try {
+				Log.d(TAG, "Trying to get window "+ windowIndex);
+				timeline.getWindow(windowIndex, window);
+			} catch (NullPointerException e) {
+				// there is no previous window
+				break;
+			}
+
+			if (window == null) {
+				// The window at the specified index is null, so there is no previous window
+				break;
+			}
+
+			long duration = window.getDurationMs();
+
+			// Check if duration is unknown
+			if (duration == C.TIME_UNSET) {
+				break;
+			}
+
+			// Update seekPosition with previous window duration
+			seekPosition += duration;
+		}
+
+		// Seek to the target window and position
+		player.seekTo(windowIndex, Math.max(0, seekPosition));
+	}
     
     private void MCPlaybackRate(float rate){
 		if(isActive){
@@ -1053,6 +1080,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
         				.setAllocator(new DefaultAllocator(true, C.DEFAULT_BUFFER_SEGMENT_SIZE))
             			.setBackBuffer(backBuffer, true)
             			.build();
+
 					player = new ExoPlayer.Builder(context)
 						.setBandwidthMeter(bandwidthMeter)
 						.setTrackSelector(trackSelector)
@@ -1128,12 +1156,6 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
         }
     }
 
-    private void MCSeek(long to) {   
-        if(isActive){
-            Seek(to);
-        }
-    }
-
     private void MCResume() {        
         if(isActive){
             if(currentPlayerState.equals("ended")){
@@ -1164,7 +1186,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
             viewAdded = false;
             parentView.removeView(playerContainer);
         }
-		currentStreamStartMs = 0;
+		currentStreamStartMs = -1;
     }
 
     private void MCRestartApp(){
