@@ -163,7 +163,6 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     private int videoForcedWidth = 1280;
     private int videoForcedHeight = 720;
 	private int hlsMinPlaylistWindowTime = 6;
-	private int backBuffer = (1000 * 60) * 10;
     private float videoForcedRatio = 1.7777777777777777f; // 16:9
 
 	private String TAG = "MegacuboPlayerPlugin";
@@ -334,9 +333,6 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                             } else if (action.equals("seekBy")) {
 								Log.e(TAG, "MCSeekBy("+ (args.getInt(0) * 1000) +")");
                                 MCSeekBy(args.getInt(0) * 1000);
-                            } else if (action.equals("setBackBuffer")) {
-								Log.e(TAG, "setBackBuffer to "+ args.getInt(0) +"secs");
-                                backBuffer = args.getInt(0) * 1000;
                             } else if (action.equals("stop")) {
                                 MCStop();
                             } else if(action.equals("mute")) {            
@@ -1078,7 +1074,6 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 
 					DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
         				.setAllocator(new DefaultAllocator(true, C.DEFAULT_BUFFER_SEGMENT_SIZE))
-            			.setBackBuffer(backBuffer, true)
             			.build();
 
 					player = new ExoPlayer.Builder(context)

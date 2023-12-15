@@ -95,13 +95,6 @@ function MegacuboPlayer() {
 			console.error('BAD PLAYBACK RATE VALUE '+ typeof(rate), rate)
 		}
     }
-    self.setBackBuffer = function(backBufferMs, success, error) {
-        if(typeof(backBufferMs) == 'number'){
-			exec(success, error, "tv.megacubo.player", "setBackBuffer", [backBufferMs])
-		} else {
-			console.error('BAD BACKBUFFER VALUE '+ typeof(backBufferMs), backBufferMs)
-		}
-    }
     self.audioTrack = function(trackId, success, error) {
         if(typeof(trackId) != 'undefined' && Array.isArray(self._audioTracks) && self._audioTracks.length > 1){
 			console.error('AUDIO TRACK '+ typeof(trackId), trackId)
