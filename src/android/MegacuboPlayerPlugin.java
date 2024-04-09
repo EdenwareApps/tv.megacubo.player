@@ -31,6 +31,7 @@ import android.view.KeyEvent;
 import android.view.View.OnLayoutChangeListener;
 import android.widget.FrameLayout;
 import android.widget.RelativeLayout;
+import androidx.coordinatorlayout.widget.CoordinatorLayout;
 
 import com.google.common.collect.ImmutableList;
 import com.google.android.exoplayer2.C;
@@ -125,8 +126,8 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     private Context context;
     private CallbackContext eventsTrackingContext;
     
-    private FrameLayout playerContainer;
-    private FrameLayout.LayoutParams aspectRatioParams;
+    private CoordinatorLayout playerContainer;
+	private CoordinatorLayout.LayoutParams aspectRatioParams;
     
     private boolean isActive;
     private boolean isPlaying;
@@ -341,7 +342,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                                 MCVolume(args.getInt(0));
                             } else if(action.equals("ratio")) {  
                                 float ratio = Float.valueOf(args.getString(0));
-                                MCRatio(ratio);
+                                ApplyAspectRatio(ratio);
                             } else if(action.equals("audioTrack")) {  
                                 String trackId = args.getString(0);
                                 audioTrack(trackId);
@@ -620,19 +621,22 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
             playerContainer.requestLayout();
             playerView.requestLayout();
 
-            sendEvent("ratio", "{\"ratio\":" + videoForcedRatio + ",\"width\":" + videoWidth + ",\"height\":" + videoHeight + "}", false);
+            sendEvent("ratio", "{\"ratio\":" + videoForcedRatio + ",\"width\":" + videoWidth + ",\"height\":" + videoHeight + "}", false);           
         }
     }
 
-    public void ResetAspectRatio(){
+    public void ResetAspectRatio(boolean resetDimensions){
         if(isActive){
-            videoWidth = 1280;
-            videoHeight = 720;
-            videoForcedHeight = 720;
-            videoForcedRatio = 1.7777777777777777f;
+			if(resetDimensions) {
+            	videoWidth = 1280;
+            	videoHeight = 720;
+            	videoForcedHeight = 720;
+            	videoForcedRatio = 1.7777777777777777f;
+			}
 
-            aspectRatioParams.width = FrameLayout.LayoutParams.MATCH_PARENT;
-            aspectRatioParams.height = FrameLayout.LayoutParams.MATCH_PARENT;
+            aspectRatioParams.gravity = Gravity.CENTER;
+            aspectRatioParams.width = CoordinatorLayout.LayoutParams.MATCH_PARENT;
+            aspectRatioParams.height = CoordinatorLayout.LayoutParams.MATCH_PARENT;
             
             Log.d(TAG, "ratio reset");
             playerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT);
@@ -721,9 +725,9 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 
     private void MCPrepare(boolean resetPosition) {
 		currentPlaybackRate = 1;
-        initMegacuboPlayer();
+        initMegacuboPlayer();			
+		MediaSource mediaSource = getMediaSource(currentURL, currentMimetype, currentSubtitle, currentCookie);
         // player!!.audioAttributes = AudioAttributes.Builder().setFlags(C.FLAG_AUDIBILITY_ENFORCED).setUsage(C.USAGE_NOTIFICATION_RINGTONE).setContentType(C.CONTENT_TYPE_SPEECH).build()
-        MediaSource mediaSource = getMediaSource(currentURL, currentMimetype, currentSubtitle, currentCookie);
         if(resetPosition){
 			long startFromZero = 0;
 			player.setMediaSource(mediaSource, startFromZero);
@@ -733,7 +737,10 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
         player.prepare();
         player.setPlayWhenReady(true);
         player.setVolume(currentVolume);
-        webView.getView().setBackgroundColor(android.R.color.transparent);
+        webView.getView().setBackgroundColor(android.R.color.transparent);		
+        CoordinatorLayout.LayoutParams layoutParams = (CoordinatorLayout.LayoutParams) playerView.getLayoutParams();
+		layoutParams.gravity = Gravity.CENTER;
+        playerView.setLayoutParams(layoutParams);
     }
     
     private static int increaseErrorCounter(){
@@ -873,7 +880,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 		public void onVideoSizeChanged(VideoSize videoSize) {
 			videoWidth = videoSize.width;
 			videoHeight = videoSize.height;
-			ResetAspectRatio();
+			ResetAspectRatio(false);
 		}
 	
 		@Override
@@ -1055,7 +1062,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
             if(!viewAdded){
 				if(playerContainer == null) {			
 					Log.d(TAG, "init");
-					playerContainer = new FrameLayout(cordova.getActivity());		
+					playerContainer = new CoordinatorLayout(cordova.getActivity());		
 					eventListener = new PlayerEventListener();
 					parentView = (ViewGroup) webView.getView().getParent();
 					playerView = new PlayerView(context);
@@ -1088,7 +1095,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 					playerView.setUseController(false); 
 					player.addListener(eventListener);
 				}
-                aspectRatioParams = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);					
+                aspectRatioParams = new CoordinatorLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);					
 				setTimeout(() -> {                            
 					cordova.getActivity().runOnUiThread(new Runnable() {
 						@Override
@@ -1122,10 +1129,6 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
             pluginResult.setKeepCallback(true);
             eventsTrackingContext.sendPluginResult(pluginResult);
         }
-    }
-
-    private void MCRatio(float ratio){        
-        ApplyAspectRatio(ratio);
     }
 
     private void MCVolume(int volume){
@@ -1173,8 +1176,6 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 		if(player != null){
 			playerView.setKeepContentOnPlayerReset(false);
 			player.stop();
-			player.release();
-			player = null;
 		}
         if(viewAdded){
             Log.d(TAG, "view found - removing container");
@@ -1252,7 +1253,6 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 		MCStop();
 		if(player != null){
 			player.release();
-			player = null;
 		}
 	}
 }

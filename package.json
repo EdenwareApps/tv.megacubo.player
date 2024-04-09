@@ -1,6 +1,6 @@
 {
   "author": {
-    "name": "Megacubo Player Cordova Plugin"
+    "name": "Megacubo Android Player Plugin"
   },
   "bugs": {
     "url": "https://github.com/efoxbr/tv.megacubo.player/issues"
@@ -14,13 +14,11 @@
     ]
   },
   "deprecated": false,
-  "description": "Megacubo Player Cordova Plugin",
-  "engines": {
-    "cordovaDependencies": {}
-  },
+  "description": "Megacubo player Capacitor/Cordova plugin.",
   "homepage": "https://github.com/efoxbr/tv.megacubo.player#readme",
   "keywords": [
     "cordova",
+    "capacitor",
     "exoplayer",
     "megacubo",
     "video",
@@ -36,5 +34,5 @@
     "url": "git+https://github.com/efoxbr/tv.megacubo.player.git"
   },
   "scripts": {},
-  "version": "0.3.1"
+  "version": "0.3.2"
 }
