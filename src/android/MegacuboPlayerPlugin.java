@@ -14,6 +14,7 @@ import android.content.res.Configuration;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.PowerManager;
 import android.text.TextUtils;
 import android.util.Log;
 import android.util.DisplayMetrics;
@@ -376,6 +377,14 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     public void onConfigurationChanged(Configuration newConfig){
         super.onConfigurationChanged(newConfig);
         GetAppMetrics();
+    }	
+    
+    @Override
+    public void onPause(boolean multitasking) {
+        super.onPause(multitasking);
+		PowerManager pm = (PowerManager) cordova.getActivity().getSystemService(Context.POWER_SERVICE);
+		boolean isScreenOn = pm.isInteractive();
+        sendEvent("suspend", isScreenOn ? "true" : "false", true);
     }
     
     public boolean hasNavigationBar(Resources resources) {
