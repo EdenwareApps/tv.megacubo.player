@@ -68,6 +68,12 @@ function MegacuboPlayer() {
     self.uiVisible = function(visible, success, error) {
         exec(success, error, "tv.megacubo.player", "ui", [visible])
     }
+    self.enterFullScreen = function(success, error) {
+        exec(success, error, "tv.megacubo.player", "enterFullScreen", [])
+    }
+    self.leaveFullScreen = function(success, error) {
+        exec(success, error, "tv.megacubo.player", "leaveFullScreen", [])
+    }
     self.seek = function(to, success, error) {
         clearTimeout(self.seekTimer)
         const by = to - self.currentTime

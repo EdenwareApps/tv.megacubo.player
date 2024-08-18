@@ -171,7 +171,10 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     private Timeline.Period period = new Timeline.Period();            
 	private Runnable timer;
 	private Handler handler;
-	private boolean uiVisible = true;
+	private Window window;
+	private View decorView;
+	private Activity activity;
+    private boolean uiVisible = true;
 	private boolean hasPermanentKeys;
 	private DefaultTrackSelector trackSelector;
     
@@ -181,13 +184,16 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     public void initialize(CordovaInterface cordova, CordovaWebView webView) {
         super.initialize(cordova, webView);
 		
-		context = this.cordova.getActivity().getApplicationContext();
+		activity = cordova.getActivity();
+		window = activity.getWindow();
+        decorView = window.getDecorView();
+		context = activity.getApplicationContext();
 		handler = new Handler();		
 		timer = new Runnable() {
 			@Override
 			public void run() {
 				if(isPlaying && uiVisible){
-					cordova.getActivity().runOnUiThread(new Runnable() {
+					activity.runOnUiThread(new Runnable() {
 						@Override
 						public void run() {
 							SendTimeData(false);
@@ -198,6 +204,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 			}
 		};
 				
+		leaveFullScreen();
 		webView.getView().addOnLayoutChangeListener(new OnLayoutChangeListener() {
 			@Override
 			public void onLayoutChange(View v, int left, int top, int right,
@@ -226,9 +233,8 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 		int realWidth = 0;
 		int height = 0;
 		int realHeight = 0;
-		Activity activity = cordova.getActivity();
 
-		WindowManager w = activity.getWindowManager();
+		WindowManager w = window.getWindowManager();
 		Display d = w.getDefaultDisplay();
 		DisplayMetrics metrics = new DisplayMetrics();
 		d.getMetrics(metrics);
@@ -300,7 +306,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
             }
         } else {
             if (action.equals("play")) {
-                cordova.getActivity().runOnUiThread(new Runnable() {
+                activity.runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
                         try {       
@@ -324,7 +330,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
             } else if(action.equals("restart")) {
                 MCRestartApp();
             } else if(isActive) {                
-                cordova.getActivity().runOnUiThread(new Runnable() {
+                activity.runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
                         try {
@@ -333,10 +339,14 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                             } else if (action.equals("resume")) {
                                 MCResume();
                             } else if (action.equals("seekBy")) {
-								Log.e(TAG, "MCSeekBy("+ (args.getInt(0) * 1000) +")");
+								Log.d(TAG, "MCSeekBy("+ (args.getInt(0) * 1000) +")");
                                 MCSeekBy(args.getInt(0) * 1000);
                             } else if (action.equals("stop")) {
                                 MCStop();
+                            } else if (action.equals("enterFullScreen")) {
+                                enterFullScreen();
+                            } else if (action.equals("leaveFullScreen")) {
+                                leaveFullScreen();
                             } else if(action.equals("mute")) {            
                                 MCMute(args.getBoolean(0));
                             } else if(action.equals("volume")) {        
@@ -382,7 +392,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     @Override
     public void onPause(boolean multitasking) {
         super.onPause(multitasking);
-		PowerManager pm = (PowerManager) cordova.getActivity().getSystemService(Context.POWER_SERVICE);
+		PowerManager pm = (PowerManager) activity.getSystemService(Context.POWER_SERVICE);
 		boolean isScreenOn = pm.isInteractive();
         sendEvent("suspend", isScreenOn ? "true" : "false", true);
     }
@@ -459,8 +469,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 			}
         }
         
-        Window win = cordova.getActivity().getWindow();
-        Display display = win.getWindowManager().getDefaultDisplay();
+        Display display = window.getWindowManager().getDefaultDisplay();
 		Point screenSize = new Point();
 		Point usableSize = new Point();
 		display.getRealSize(screenSize);
@@ -518,7 +527,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 			Log.d(TAG, "nudged currentTime " + player.getCurrentPosition());
 		}
 		setTimeout(() -> {                            
-			cordova.getActivity().runOnUiThread(new Runnable() {
+			activity.runOnUiThread(new Runnable() {
 				@Override
 				public void run() {
 					fixStalledPlayback();
@@ -544,7 +553,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 		//Log.d(TAG, "Playback doesn't seems stalled");
 		if(currentPlayerState.equals("loading")){
 			setTimeout(() -> {                            
-				cordova.getActivity().runOnUiThread(new Runnable() {
+				activity.runOnUiThread(new Runnable() {
 					@Override
 					public void run() {
 						fixStalledPlayback();
@@ -817,7 +826,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 				sendEventEnabled = true;
 				sendEvent("state", currentPlayerState, false);
 				if(currentPlayerState.equals("loading")){
-					cordova.getActivity().runOnUiThread(new Runnable() {
+					activity.runOnUiThread(new Runnable() {
 						@Override
 						public void run() {
 							fixStalledPlayback();
@@ -867,7 +876,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 			}
 			currentPlayerState = state;
 			sendEvent("state", state, false);
-			cordova.getActivity().runOnUiThread(new Runnable() {
+			activity.runOnUiThread(new Runnable() {
 				@Override
 				public void run() {
 					fixStalledPlayback();
@@ -1071,7 +1080,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
             if(!viewAdded){
 				if(playerContainer == null) {			
 					Log.d(TAG, "init");
-					playerContainer = new CoordinatorLayout(cordova.getActivity());		
+					playerContainer = new CoordinatorLayout(activity);		
 					eventListener = new PlayerEventListener();
 					parentView = (ViewGroup) webView.getView().getParent();
 					playerView = new PlayerView(context);
@@ -1106,15 +1115,16 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 				}
                 aspectRatioParams = new CoordinatorLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);					
 				setTimeout(() -> {                            
-					cordova.getActivity().runOnUiThread(new Runnable() {
+					activity.runOnUiThread(new Runnable() {
 						@Override
 						public void run() {
+							webView.getView().setBackgroundColor(android.R.color.transparent);
+							parentView.setBackgroundColor(Color.BLACK);
                 			if(!viewAdded) {
 								viewAdded = true;
 								parentView.addView(playerContainer, 0, aspectRatioParams);
+								enterFullScreen();
 							}
-							webView.getView().setBackgroundColor(android.R.color.transparent);
-							parentView.setBackgroundColor(Color.BLACK);
 						}
 					});
 				}, 200);
@@ -1190,12 +1200,13 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
             Log.d(TAG, "view found - removing container");
             viewAdded = false;
             parentView.removeView(playerContainer);
+			leaveFullScreen();
         }
 		currentStreamStartMs = -1;
     }
 
     private void MCRestartApp(){
-		cordova.getActivity().runOnUiThread(new Runnable() {
+		activity.runOnUiThread(new Runnable() {
 			@Override
 			public void run() {
 				MCStop();
@@ -1225,32 +1236,93 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                         Log.i(TAG,"Killing application for cold restart");
                         mgr.set(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + 100, mPendingIntent);
                         //kill the application
-                        //this.cordova.getActivity().finish();
+                        //this.activity.finish();
                         System.exit(0);
                         //android.os.Process.killProcess(android.os.Process.myPid());
                     } else {
-                        Log.d(TAG, baseError + " StartActivity is null");
+                        Log.e(TAG, baseError + " StartActivity is null");
                     }
                 } else {
-                    Log.d(TAG, baseError + " PackageManager is null");
+                    Log.e(TAG, baseError + " PackageManager is null");
                 }
             } else {
-                Log.d(TAG, baseError+" Context is null");
+                Log.e(TAG, baseError+" Context is null");
             }
         } catch (Exception ex) {
-            Log.d(TAG, baseError+ ex.getMessage());
+            Log.e(TAG, baseError+ ex.getMessage());
         }
     }
     
+    protected boolean leaveFullScreen() {
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    // Tornar a status bar e a nav bar translúcidas
+                    window.setFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS, WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS);
+                    window.setFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION, WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION);
+
+                    // Definir as flags de visibilidade para estender o conteúdo por baixo das barras
+                    final int uiOptions = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                            | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                            | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN;
+
+                    decorView.setSystemUiVisibility(uiOptions);
+                } catch (Exception e) {
+                    Log.e(TAG, e.getMessage());
+                }
+            }
+        });
+        return true;
+    }
+
+    protected boolean enterFullScreen() {
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    // Definir as flags de visibilidade para modo imersivo completo
+                    final int uiOptions = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                            | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                            | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                            | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                            | View.SYSTEM_UI_FLAG_FULLSCREEN
+                            | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
+
+                    decorView.setSystemUiVisibility(uiOptions);
+
+                    // Listener para manter o modo imersivo ativo
+                    decorView.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+                        @Override
+                        public void onFocusChange(View v, boolean hasFocus) {
+                            if (hasFocus) {
+                                decorView.setSystemUiVisibility(uiOptions);
+                            }
+                        }
+                    });
+
+                    decorView.setOnSystemUiVisibilityChangeListener(new View.OnSystemUiVisibilityChangeListener() {
+                        @Override
+                        public void onSystemUiVisibilityChange(int visibility) {
+                            decorView.setSystemUiVisibility(uiOptions);
+                        }
+                    });
+                } catch (Exception e) {
+                    Log.e(TAG, e.getMessage());
+                }
+            }
+        });
+        return true;
+    }
+
     public static void setTimeout(Runnable runnable, int delay){
         new Thread(() -> {
             try {
                 Thread.sleep(delay);
                 runnable.run();
-            }
-            catch (Exception e){
+            } catch (Exception e){
                 System.err.println(e);
-                Log.d("MegacuboPlayerPlugin", "setTimeout error "+ e.getMessage());
+                Log.e("MegacuboPlayerPlugin", "setTimeout error "+ e.getMessage());
             }
         }).start();
     }
