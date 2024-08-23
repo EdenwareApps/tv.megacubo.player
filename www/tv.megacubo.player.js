@@ -10,6 +10,13 @@ function MegacuboPlayer() {
             self.events[type].push(cb)
         }
     }
+    self.once = function (type, cb){
+        const listener = () => {
+            cb()
+            self.off(type, listener)
+        }
+        self.on(type, listener)
+    }
     self.off = function (type, cb){
         if(typeof(self.events[type]) != 'undefined'){
             if(typeof(cb) == 'function'){

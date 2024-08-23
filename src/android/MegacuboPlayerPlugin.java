@@ -160,6 +160,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     private long lastVideoTime = -1;
     private long videoLoadingSince = -1;
     private long currentStreamStartMs = -1;
+	private int uiOptions = 0;
     private int videoWidth = 1280;
     private int videoHeight = 720;
     private int videoForcedWidth = 1280;
@@ -204,7 +205,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 			}
 		};
 				
-		leaveFullScreen();
+		setupFullScreen();
 		webView.getView().addOnLayoutChangeListener(new OnLayoutChangeListener() {
 			@Override
 			public void onLayoutChange(View v, int left, int top, int right,
@@ -1258,12 +1259,10 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
             @Override
             public void run() {
                 try {
-                    // Tornar a status bar e a nav bar translúcidas
                     window.setFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS, WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS);
                     window.setFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION, WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION);
 
-                    // Definir as flags de visibilidade para estender o conteúdo por baixo das barras
-                    final int uiOptions = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    uiOptions = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                             | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
                             | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN;
 
@@ -1281,8 +1280,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
             @Override
             public void run() {
                 try {
-                    // Definir as flags de visibilidade para modo imersivo completo
-                    final int uiOptions = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    uiOptions = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                             | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
                             | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
                             | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
@@ -1290,8 +1288,20 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                             | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
 
                     decorView.setSystemUiVisibility(uiOptions);
+                } catch (Exception e) {
+                    Log.e(TAG, e.getMessage());
+                }
+            }
+        });
+        return true;
+    }
 
-                    // Listener para manter o modo imersivo ativo
+    protected boolean setupFullScreen() {
+		leaveFullScreen();
+		activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
                     decorView.setOnFocusChangeListener(new View.OnFocusChangeListener() {
                         @Override
                         public void onFocusChange(View v, boolean hasFocus) {
@@ -1300,7 +1310,6 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                             }
                         }
                     });
-
                     decorView.setOnSystemUiVisibilityChangeListener(new View.OnSystemUiVisibilityChangeListener() {
                         @Override
                         public void onSystemUiVisibilityChange(int visibility) {
