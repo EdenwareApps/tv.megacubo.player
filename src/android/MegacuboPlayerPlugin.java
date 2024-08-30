@@ -6,6 +6,7 @@ import android.net.ConnectivityManager;
 import android.net.wifi.WifiManager;
 import android.app.Activity;
 import android.app.ActivityManager;
+import android.graphics.Rect;
 import android.graphics.Point;
 import android.graphics.Color;
 import android.content.Context;
@@ -144,6 +145,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     private static final int BUFFER_SEGMENT_SIZE = 64 * 1024;
     private static final int BUFFER_SEGMENT_COUNT = 256;
 
+	private String currentMetricsJson = "";
     private String currentPlayerState = "";
     private String currentURL = "";
     private String currentMediatype = "";
@@ -156,6 +158,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     private float currentPlaybackRate = 1;
     private boolean checkedMiUi = false;
     private boolean viewAdded = false;
+    private boolean inFullScreen = false;
     private boolean sendEventEnabled = true;
     private long lastVideoTime = -1;
     private long videoLoadingSince = -1;
@@ -174,6 +177,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 	private Handler handler;
 	private Window window;
 	private View decorView;
+	private float scaleRatio;
 	private Activity activity;
     private boolean uiVisible = true;
 	private boolean hasPermanentKeys;
@@ -204,7 +208,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 				}
 			}
 		};
-				
+		scaleRatio = context.getResources().getDisplayMetrics().density;	
 		setupFullScreen();
 		webView.getView().addOnLayoutChangeListener(new OnLayoutChangeListener() {
 			@Override
@@ -445,51 +449,37 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     }
             
     public void GetAppMetrics() {
-        // status bar height
-        Resources resources = context.getResources();
-        float scaleRatio = resources.getDisplayMetrics().density;
-        int statusBarHeight = 0;
-        int top = 0;
-        int bottom = 0;
-        int right = 0;
-        int left = 0;
-
-        int resourceId = resources.getIdentifier("status_bar_height", "dimen", "android");
-        if (resourceId > 0) {
-            statusBarHeight = resources.getDimensionPixelSize(resourceId);
-            statusBarHeight = (int) (((float)statusBarHeight) / scaleRatio);
-        }
-
-        // navigation bar height
-        int actionBarHeight = 0;
-        if(hasNavigationBar(resources)){
-			resourceId = resources.getIdentifier("navigation_bar_height", "dimen", "android");
-			if (resourceId > 0) {
-				actionBarHeight = resources.getDimensionPixelSize(resourceId);
-				actionBarHeight = (int) (((float)actionBarHeight) / scaleRatio);
-			}
-        }
-        
-        Display display = window.getWindowManager().getDefaultDisplay();
+		Display display = window.getWindowManager().getDefaultDisplay();
 		Point screenSize = new Point();
-		Point usableSize = new Point();
 		display.getRealSize(screenSize);
-        display.getSize(usableSize);
 
-        top = statusBarHeight;
-        if (usableSize.x == screenSize.x) {
-			bottom = actionBarHeight;
-		} else {
-			int rotation = display.getRotation();  
-			if(rotation == 3 && Build.VERSION.SDK_INT > Build.VERSION_CODES.N){
-				left = actionBarHeight;
-			}  else {
-				right = actionBarHeight;
-			}
+		Rect visibleFrame = new Rect();
+		window.getDecorView().getWindowVisibleDisplayFrame(visibleFrame);
+
+		int top = visibleFrame.top;
+		int bottom = screenSize.y - visibleFrame.bottom;
+		int left = visibleFrame.left;
+		int right = screenSize.x - visibleFrame.right;
+
+		if (top > 0) {
+			top = (int) (((float)top) / scaleRatio);
 		}
-        
-        sendEvent("appMetrics", "{\"top\":" + top + ",\"bottom\":" + bottom + ",\"right\":" + right + ",\"left\":" + left + "}", true);
-    }
+		if (bottom > 0) {
+			bottom = (int) (((float)bottom) / scaleRatio);
+		}
+		if (left > 0) {
+			left = (int) (((float)left) / scaleRatio);
+		}
+		if (right > 0) {
+			right = (int) (((float)right) / scaleRatio);
+		}
+
+		String metricsJson = "{\"top\":" + top + ",\"bottom\":" + bottom + ",\"right\":" + right + ",\"left\":" + left + "}";
+		if(!currentMetricsJson.equals(metricsJson)){
+			currentMetricsJson = metricsJson;
+			sendEvent("appMetrics", metricsJson, true);
+		}
+	}
 
     public boolean isPlaybackStalled(){
 		if(isActive && currentPlayerState.equals("loading") && (currentMimetypeIsHLS || currentMimetypeIsDash)){
@@ -1267,6 +1257,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                             | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN;
 
                     decorView.setSystemUiVisibility(uiOptions);
+					inFullScreen = false;
                 } catch (Exception e) {
                     Log.e(TAG, e.getMessage());
                 }
@@ -1286,8 +1277,8 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                             | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
                             | View.SYSTEM_UI_FLAG_FULLSCREEN
                             | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
-
                     decorView.setSystemUiVisibility(uiOptions);
+					inFullScreen = true;
                 } catch (Exception e) {
                     Log.e(TAG, e.getMessage());
                 }
