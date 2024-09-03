@@ -1,192 +1,221 @@
-var exec = require('cordova/exec')
-function MegacuboPlayer() {
-    var self = this
-    self.appMetrics = {top: 0, bottom: 0, right: 0, left: 0};
-    self.on = function (type, cb){
-        if(typeof(self.events[type]) == 'undefined'){
-            self.events[type] = []
+const exec = require('cordova/exec');
+
+class MegacuboPlayer {
+    constructor() {
+        this.metrics = { top: 0, bottom: 0, right: 0, left: 0 };
+        this.events = {};
+        this.seekTimer = null;
+        this.timeUpdateLocked = false;
+        this.init();
+    }
+
+    on(type, cb) {
+        if (!this.events[type]) {
+            this.events[type] = [];
         }
-        if(self.events[type].indexOf(cb) == -1){
-            self.events[type].push(cb)
+        if (!this.events[type].includes(cb)) {
+            this.events[type].push(cb);
         }
     }
-    self.once = function (type, cb){
-        const listener = () => {
-            cb()
-            self.off(type, listener)
-        }
-        self.on(type, listener)
+
+    once(type, cb) {
+        const listener = (...args) => {
+            cb(...args);
+            this.off(type, listener);
+        };
+        this.on(type, listener);
     }
-    self.off = function (type, cb){
-        if(typeof(self.events[type]) != 'undefined'){
-            if(typeof(cb) == 'function'){
-                let i = self.events[type].indexOf(cb)
-                if(i != -1){
-                    self.events[type].splice(i, 1)
+
+    off(type, cb) {
+        if (this.events[type]) {
+            if (typeof cb === 'function') {
+                const index = this.events[type].indexOf(cb);
+                if (index !== -1) {
+                    this.events[type].splice(index, 1);
                 }
             } else {
-                delete self.events[type]
+                delete this.events[type];
             }
         }
     }
-    self.emit = function (){
-        var a = Array.from(arguments)
-        var type = a.shift()
-        if(typeof(self.events[type]) != 'undefined'){
-            self.events[type].forEach(function (f){
-                f.apply(null, a)
-            })
+
+    emit(type, ...args) {
+        if (this.events[type]) {
+            this.events[type].forEach(cb => cb(...args));
         }
     }
-    self.play = function(uri, mimetype, subtitles, cookie, mediatype, success, error) {
-        self.currentTime = 0;
-        self.duration = 0;
-        self._audioTracks = null;
-        self._subtitleTracks = null;
-        exec(success, error, "tv.megacubo.player", "play", [uri, mimetype, subtitles, cookie, mediatype])
+
+    play(uri, mimetype, subtitles, cookie, mediatype, success, error) {
+        this.currentTime = 0;
+        this.duration = 0;
+        this._audioTracks = null;
+        this._subtitleTracks = null;
+        exec(success, error, "tv.megacubo.player", "play", [uri, mimetype, subtitles, cookie, mediatype]);
     }
-    self.volume = function(level, success, error) {
-        exec(success, error, "tv.megacubo.player", "volume", [level])
+
+    volume(level, success, error) {
+        exec(success, error, "tv.megacubo.player", "volume", [level]);
     }
-    self.stop = function(success, error) {
-        exec(success, error, "tv.megacubo.player", "stop", [])
+
+    stop(success, error) {
+        exec(success, error, "tv.megacubo.player", "stop", []);
     }
-    self.pause = function(success, error) {
-        exec(success, error, "tv.megacubo.player", "pause", [])
+
+    pause(success, error) {
+        exec(success, error, "tv.megacubo.player", "pause", []);
     }
-    self.resume = function(success, error) {
-        exec(success, error, "tv.megacubo.player", "resume", [])
+
+    resume(success, error) {
+        exec(success, error, "tv.megacubo.player", "resume", []);
     }
-    self.mute = function(success, error) {
-        exec(success, error, "tv.megacubo.player", "mute", [])
+
+    mute(success, error) {
+        exec(success, error, "tv.megacubo.player", "mute", []);
     }
-    self.unmute = function(success, error) {
-        exec(success, error, "tv.megacubo.player", "unMute", [])
+
+    unmute(success, error) {
+        exec(success, error, "tv.megacubo.player", "unMute", []);
     }
-    self.restartApp = function(success, error) {
-        exec(success, error, "tv.megacubo.player", "restart", [])
+
+    restartApp(success, error) {
+        exec(success, error, "tv.megacubo.player", "restart", []);
     }
-    self.getAppMetrics = function(success, error) {
-        exec(success, error, "tv.megacubo.player", "getAppMetrics", [])
+
+    updateScreenMetrics(success, error) {
+        exec(success, error, "tv.megacubo.player", "updateScreenMetrics", []);
     }
-    self.getNetworkIp = function(success, error) {
-        exec(success, error, "tv.megacubo.player", "getNetworkIp", [])
+
+    getNetworkIp(success, error) {
+        exec(success, error, "tv.megacubo.player", "getNetworkIp", []);
     }
-    self.uiVisible = function(visible, success, error) {
-        exec(success, error, "tv.megacubo.player", "ui", [visible])
+
+    uiVisible(visible, success, error) {
+        exec(success, error, "tv.megacubo.player", "ui", [visible]);
     }
-    self.enterFullScreen = function(success, error) {
-        exec(success, error, "tv.megacubo.player", "enterFullScreen", [])
+
+    enterFullScreen(success, error) {
+        exec(success, error, "tv.megacubo.player", "enterFullScreen", []);
     }
-    self.leaveFullScreen = function(success, error) {
-        exec(success, error, "tv.megacubo.player", "leaveFullScreen", [])
+
+    leaveFullScreen(success, error) {
+        exec(success, error, "tv.megacubo.player", "leaveFullScreen", []);
     }
-    self.seek = function(to, success, error) {
-        clearTimeout(self.seekTimer)
-        const by = to - self.currentTime
-        exec(success, error, "tv.megacubo.player", "seekBy", [by])
-        self.timeUpdateLocked = true
-        self.seekTimer = setTimeout(() => {
-            self.timeUpdateLocked = false
-        }, 2000)
+
+    seek(to, success, error) {
+        clearTimeout(this.seekTimer);
+        const by = to - this.currentTime;
+        exec(success, error, "tv.megacubo.player", "seekBy", [by]);
+        this.timeUpdateLocked = true;
+        this.seekTimer = setTimeout(() => {
+            this.timeUpdateLocked = false;
+        }, 2000);
     }
-    self.ratio = function(r, success, error) {
-        if(typeof(r) == 'number' && !isNaN(r)){
-			if(r != self.aspectRatio){
-				exec(success, error, "tv.megacubo.player", "ratio", [r])
-			}
-		} else {
-			console.error('BAD RATIO VALUE '+ typeof(r), r)
-		}
-    }
-    self.setPlaybackRate = function(rate, success, error) {
-        if(typeof(rate) == 'number' && !isNaN(rate)){
-			if(rate != self.playbackRate){
-				exec(success, error, "tv.megacubo.player", "rate", [rate])
-			}
-		} else {
-			console.error('BAD PLAYBACK RATE VALUE '+ typeof(rate), rate)
-		}
-    }
-    self.audioTrack = function(trackId, success, error) {
-        if(typeof(trackId) != 'undefined' && Array.isArray(self._audioTracks) && self._audioTracks.length > 1){
-			console.error('AUDIO TRACK '+ typeof(trackId), trackId)
-			exec(success, error, "tv.megacubo.player", "audioTrack", [trackId])
-		} else {
-			console.error('BAD AUDIO TRACK VALUE '+ typeof(trackId), trackId)
-		}
-    }
-    self.subtitleTrack = function(trackId, success, error) {
-        console.error('SUBTITLE TRACK CHANGE '+JSON.stringify({trackId, tracks: self._subtitleTracks}))
-        if(typeof(trackId) != 'undefined' && Array.isArray(self._subtitleTracks) && self._subtitleTracks.length >= 1){
-			console.error('SUBTITLE TRACK '+ typeof(trackId), trackId)
-			exec(success, error, "tv.megacubo.player", "subtitleTrack", [trackId])
-		} else {
-			console.error('BAD SUBTITLE TRACK VALUE '+ typeof(trackId), trackId)
-		}
-    }
-    self.audioTracks = function() {
-        return Array.isArray(self._audioTracks) ? self._audioTracks : [{id: 0, name: 'Default'}]
-    }
-    self.subtitleTracks = function() {
-        return Array.isArray(self._subtitleTracks) ? self._subtitleTracks : []
-    }
-    self.onTrackingEvent = e => {
-        if(e.data && ['{', '[', '"'].indexOf(e.data.charAt(0)) != -1){
-            e.data = JSON.parse(e.data)
-        }
-        self.emit(e.type, e.data)
-    }
-    self.init = () => {
-        self.seekTimer = 0
-        self.events = {}
-        self.on('ratio', e => {
-            self.aspectRatio = e.ratio
-            self.videoWidth = e.width
-            self.videoHeight = e.height
-        })
-        self.on('appMetrics', e => {
-            self.appMetrics = e
-            self.emit('appmetrics', e)
-        })
-        self.on('tracks', e => {
-            console.error('TRACKS CHANGED '+JSON.stringify(e))
-            self._audioTracks = e.filter(e => e.type.indexOf('audio') != -1)
-            self._subtitleTracks = e.filter(e => e.type.indexOf('text') != -1)
-            self.emit('audioTracks', self._audioTracks)
-            self.emit('subtitleTracks', self._subtitleTracks)
-        })
-        self.on('networkIp', e => {
-            self.networkIp = e
-            self.emit('network-ip', e)
-        })
-        self.on('nightMode', info => {
-            if(!self.nightModeInfo){
-                self.nightModeInfo = info
-                self.emit('nightmode', info)
+
+    ratio(r, success, error) {
+        if (typeof r === 'number' && !isNaN(r)) {
+            if (r !== this.aspectRatio) {
+                exec(success, error, "tv.megacubo.player", "ratio", [r]);
             }
-        })
-        self.on('time', e => {
+        } else {
+            console.error('BAD RATIO VALUE', r);
+        }
+    }
+
+    setPlaybackRate(rate, success, error) {
+        if (typeof rate === 'number' && !isNaN(rate)) {
+            if (rate !== this.playbackRate) {
+                exec(success, error, "tv.megacubo.player", "rate", [rate]);
+            }
+        } else {
+            console.error('BAD PLAYBACK RATE VALUE', rate);
+        }
+    }
+
+    audioTrack(trackId, success, error) {
+        if (trackId !== undefined && Array.isArray(this._audioTracks) && this._audioTracks.length > 1) {
+            exec(success, error, "tv.megacubo.player", "audioTrack", [trackId]);
+        } else {
+            console.error('BAD AUDIO TRACK VALUE', trackId);
+        }
+    }
+
+    subtitleTrack(trackId, success, error) {
+        if (trackId !== undefined && Array.isArray(this._subtitleTracks) && this._subtitleTracks.length >= 1) {
+            exec(success, error, "tv.megacubo.player", "subtitleTrack", [trackId]);
+        } else {
+            console.error('BAD SUBTITLE TRACK VALUE', trackId);
+        }
+    }
+
+    audioTracks() {
+        return Array.isArray(this._audioTracks) ? this._audioTracks : [{ id: 0, name: 'Default' }];
+    }
+
+    subtitleTracks() {
+        return Array.isArray(this._subtitleTracks) ? this._subtitleTracks : [];
+    }
+
+    onTrackingEvent = (e) => {
+        if (e.data && ['{', '[', '"'].includes(e.data.charAt(0))) {
+            e.data = JSON.parse(e.data);
+        }
+        this.emit(e.type, e.data);
+    };
+
+    init() {
+        this.on('ratio', e => {
+            this.aspectRatio = e.ratio;
+            this.videoWidth = e.width;
+            this.videoHeight = e.height;
+        });
+
+        this.on('screenMetrics', e => {
+            this.metrics = e;
+            this.emit('metrics', e);
+        });
+
+        this.on('tracks', e => {
+            this._audioTracks = e.filter(track => track.type.includes('audio'));
+            this._subtitleTracks = e.filter(track => track.type.includes('text'));
+            this.emit('audioTracks', this._audioTracks);
+            this.emit('subtitleTracks', this._subtitleTracks);
+        });
+
+        this.on('networkIp', e => {
+            this.networkIp = e;
+            this.emit('network-ip', e);
+        });
+
+        this.on('nightMode', info => {
+            if (!this.nightModeInfo) {
+                this.nightModeInfo = info;
+                this.emit('nightmode', info);
+            }
+        });
+
+        this.on('time', e => {
             e.currentTime = Math.max(e.currentTime / 1000, 0);
             e.duration = e.duration / 1000;
-            if(e.duration < e.currentTime){
+            if (e.duration < e.currentTime) {
                 e.duration = e.currentTime + 1;
             }
-            if(e.currentTime > 0 && e.currentTime != self.currentTime){
-                self.currentTime = e.currentTime
-                if(!self.timeUpdateLocked){
-                    self.emit('timeupdate')
+            if (e.currentTime > 0 && e.currentTime !== this.currentTime) {
+                this.currentTime = e.currentTime;
+                if (!this.timeUpdateLocked) {
+                    this.emit('timeupdate');
                 }
             }
-            if(e.duration && e.duration != self.duration){
-                self.duration = e.duration
-                self.emit('durationchange')
+            if (e.duration && e.duration !== this.duration) {
+                this.duration = e.duration;
+                this.emit('durationchange');
             }
-        })
-        exec(self.onTrackingEvent, function() {}, "tv.megacubo.player", "bind", [navigator.userAgent])
-        self.getAppMetrics(() => {}, console.error)
+        });
+
+        exec(this.onTrackingEvent, () => {}, "tv.megacubo.player", "bind", [navigator.userAgent]);
+        setTimeout(() => {
+            this.updateScreenMetrics(() => {}, err => console.error('Failed to update screen metrics', err));
+        }, 10);
     }
-    self.init()
 }
 
-module.exports = new MegacuboPlayer()
+module.exports = new MegacuboPlayer();

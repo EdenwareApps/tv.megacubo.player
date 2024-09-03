@@ -215,7 +215,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 			public void onLayoutChange(View v, int left, int top, int right,
 					int bottom, int oldLeft, int oldTop, int oldRight,
 					int oldBottom) {
-				GetAppMetrics();
+				UpdateScreenMetrics();
 			}
 		});
 		
@@ -328,8 +328,8 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                         }
                     }
                 });
-            } else if(action.equals("getAppMetrics")) { 
-                GetAppMetrics();
+            } else if(action.equals("updateScreenMetrics")) { 
+                UpdateScreenMetrics();
             } else if(action.equals("getNetworkIp")) { 
 				sendEvent("networkIp", "\""+ getWifiIp() +"\"", true);
             } else if(action.equals("restart")) {
@@ -391,7 +391,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     @Override
     public void onConfigurationChanged(Configuration newConfig){
         super.onConfigurationChanged(newConfig);
-        GetAppMetrics();
+        UpdateScreenMetrics();
     }	
     
     @Override
@@ -448,36 +448,43 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 		return false;
     }
             
-    public void GetAppMetrics() {
+    public void UpdateScreenMetrics() {
 		Display display = window.getWindowManager().getDefaultDisplay();
 		Point screenSize = new Point();
 		display.getRealSize(screenSize);
 
-		Rect visibleFrame = new Rect();
-		window.getDecorView().getWindowVisibleDisplayFrame(visibleFrame);
+		int top = 0;
+		int bottom = 0;
+		int left = 0;
+		int right = 0;
 
-		int top = visibleFrame.top;
-		int bottom = screenSize.y - visibleFrame.bottom;
-		int left = visibleFrame.left;
-		int right = screenSize.x - visibleFrame.right;
+		if(!inFullScreen){
+			Rect visibleFrame = new Rect();
+			window.getDecorView().getWindowVisibleDisplayFrame(visibleFrame);
 
-		if (top > 0) {
-			top = (int) (((float)top) / scaleRatio);
-		}
-		if (bottom > 0) {
-			bottom = (int) (((float)bottom) / scaleRatio);
-		}
-		if (left > 0) {
-			left = (int) (((float)left) / scaleRatio);
-		}
-		if (right > 0) {
-			right = (int) (((float)right) / scaleRatio);
+			top = visibleFrame.top;
+			bottom = screenSize.y - visibleFrame.bottom;
+			left = visibleFrame.left;
+			right = screenSize.x - visibleFrame.right;
+
+			if (top > 0) {
+				top = (int) (((float)top) / scaleRatio);
+			}
+			if (bottom > 0) {
+				bottom = (int) (((float)bottom) / scaleRatio);
+			}
+			if (left > 0) {
+				left = (int) (((float)left) / scaleRatio);
+			}
+			if (right > 0) {
+				right = (int) (((float)right) / scaleRatio);
+			}
 		}
 
 		String metricsJson = "{\"top\":" + top + ",\"bottom\":" + bottom + ",\"right\":" + right + ",\"left\":" + left + "}";
 		if(!currentMetricsJson.equals(metricsJson)){
 			currentMetricsJson = metricsJson;
-			sendEvent("appMetrics", metricsJson, true);
+			sendEvent("screenMetrics", metricsJson, true);
 		}
 	}
 
@@ -1258,6 +1265,9 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 
                     decorView.setSystemUiVisibility(uiOptions);
 					inFullScreen = false;
+					setTimeout(() -> {                            
+						UpdateScreenMetrics();
+					}, 50);					
                 } catch (Exception e) {
                     Log.e(TAG, e.getMessage());
                 }
@@ -1278,7 +1288,10 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                             | View.SYSTEM_UI_FLAG_FULLSCREEN
                             | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
                     decorView.setSystemUiVisibility(uiOptions);
-					inFullScreen = true;
+					inFullScreen = true;	
+					setTimeout(() -> {                            
+						UpdateScreenMetrics();
+					}, 50);					
                 } catch (Exception e) {
                     Log.e(TAG, e.getMessage());
                 }
