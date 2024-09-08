@@ -309,6 +309,8 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
             if(callbackContext == null) {
                 Log.d(TAG, "bind called with null");
             }
+			currentMetricsJson = "";
+			UpdateScreenMetrics();
         } else {
             if (action.equals("play")) {
                 activity.runOnUiThread(new Runnable() {
@@ -329,6 +331,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                     }
                 });
             } else if(action.equals("updateScreenMetrics")) { 
+				currentMetricsJson = "";
                 UpdateScreenMetrics();
             } else if(action.equals("getNetworkIp")) { 
 				sendEvent("networkIp", "\""+ getWifiIp() +"\"", true);
@@ -359,7 +362,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
                             } else if(action.equals("ratio")) {  
                                 float ratio = Float.valueOf(args.getString(0));
                                 ApplyAspectRatio(ratio);
-                            } else if(action.equals("audioTrack")) {  
+                            } else if(action.equals("audioTrack")) {
                                 String trackId = args.getString(0);
                                 audioTrack(trackId);
                             } else if(action.equals("subtitleTrack")) {  

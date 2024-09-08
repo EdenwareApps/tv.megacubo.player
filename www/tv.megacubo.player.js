@@ -212,9 +212,6 @@ class MegacuboPlayer {
         });
 
         exec(this.onTrackingEvent, () => {}, "tv.megacubo.player", "bind", [navigator.userAgent]);
-        setTimeout(() => {
-            this.updateScreenMetrics(() => {}, err => console.error('Failed to update screen metrics', err));
-        }, 10);
     }
 }
 
