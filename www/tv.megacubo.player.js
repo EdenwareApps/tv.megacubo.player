@@ -2,7 +2,6 @@ const exec = require('cordova/exec');
 
 class MegacuboPlayer {
     constructor() {
-        this.metrics = { top: 0, bottom: 0, right: 0, left: 0 };
         this.events = {};
         this.seekTimer = null;
         this.timeUpdateLocked = false;
@@ -81,24 +80,12 @@ class MegacuboPlayer {
         exec(success, error, "tv.megacubo.player", "restart", []);
     }
 
-    updateScreenMetrics(success, error) {
-        exec(success, error, "tv.megacubo.player", "updateScreenMetrics", []);
-    }
-
     getNetworkIp(success, error) {
         exec(success, error, "tv.megacubo.player", "getNetworkIp", []);
     }
 
     uiVisible(visible, success, error) {
         exec(success, error, "tv.megacubo.player", "ui", [visible]);
-    }
-
-    enterFullScreen(success, error) {
-        exec(success, error, "tv.megacubo.player", "enterFullScreen", []);
-    }
-
-    leaveFullScreen(success, error) {
-        exec(success, error, "tv.megacubo.player", "leaveFullScreen", []);
     }
 
     seek(to, success, error) {
@@ -167,11 +154,6 @@ class MegacuboPlayer {
             this.aspectRatio = e.ratio;
             this.videoWidth = e.width;
             this.videoHeight = e.height;
-        });
-
-        this.on('screenMetrics', e => {
-            this.metrics = e;
-            this.emit('metrics', e);
         });
 
         this.on('tracks', e => {
