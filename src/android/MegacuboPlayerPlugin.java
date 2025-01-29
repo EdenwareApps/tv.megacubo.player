@@ -85,6 +85,7 @@ import java.util.List;
 import java.util.LinkedList;
 
 import android.content.Intent;
+import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 
 public class MegacuboPlayerPlugin extends CordovaPlugin {
@@ -150,7 +151,6 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
     @Override
     public void initialize(CordovaInterface cordova, CordovaWebView webView) {
         super.initialize(cordova, webView);
-		
 		activity = cordova.getActivity();
 		window = activity.getWindow();
         decorView = window.getDecorView();
@@ -176,7 +176,21 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 				setupWindowLayout();
 			}
 		});
+		updateScreenOrientation();
         Log.d(TAG, "We're initialized.");	
+    }
+
+	public void updateScreenOrientation() {		
+        if ((isActive && videoWidth > videoHeight) || isVrDevice()) {
+			activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+        } else {
+        	activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR);
+		}
+	}
+
+    public boolean isVrDevice() {
+        PackageManager pm = context.getPackageManager();
+        return pm.hasSystemFeature(PackageManager.FEATURE_VR_MODE_HIGH_PERFORMANCE);
     }
 
 	public static boolean isMiUi() {
@@ -950,6 +964,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 					}, 200);
 				}
             }
+			updateScreenOrientation();
         }
     }
 
@@ -1023,6 +1038,7 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
             parentView.removeView(playerContainer);
         }
 		currentStreamStartMs = -1;
+		updateScreenOrientation();
     }
 
     private void mpRestartApp() {
