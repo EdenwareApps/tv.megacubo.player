@@ -142,7 +142,7 @@ class MegacuboPlayer {
         return Array.isArray(this._subtitleTracks) ? this._subtitleTracks : [];
     }
 
-    onTrackingEvent = (e) => {
+    onTrackingEvent(e) {
         if (e.data && ['{', '[', '"'].includes(e.data.charAt(0))) {
             e.data = JSON.parse(e.data);
         }
@@ -193,7 +193,7 @@ class MegacuboPlayer {
             }
         });
 
-        exec(this.onTrackingEvent, () => {}, "tv.megacubo.player", "bind", [navigator.userAgent]);
+        exec(this.onTrackingEvent.bind(this), () => {}, "tv.megacubo.player", "bind", [navigator.userAgent]);
     }
 }
 
