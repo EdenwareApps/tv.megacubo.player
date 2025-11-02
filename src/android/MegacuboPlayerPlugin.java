@@ -255,6 +255,16 @@ public class MegacuboPlayerPlugin extends CordovaPlugin {
 				sendEvent("networkIp", "\""+ getWifiIp() +"\"", true);
             } else if(action.equals("restart")) {
                 mpRestartApp();
+            } else if(action.equals("updateScreenOrientation")) {
+                activity.runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        updateScreenOrientation();
+                        if(callbackContext != null) {
+                            callbackContext.success();
+                        }
+                    }
+                });
             } else if(isActive) {                
                 activity.runOnUiThread(new Runnable() {
                     @Override

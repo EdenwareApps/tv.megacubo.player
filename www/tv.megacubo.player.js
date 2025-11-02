@@ -84,6 +84,10 @@ class MegacuboPlayer {
         exec(success, error, "tv.megacubo.player", "getNetworkIp", []);
     }
 
+    updateScreenOrientation(success, error) {
+        exec(success || (() => {}), error || (() => {}), "tv.megacubo.player", "updateScreenOrientation", []);
+    }
+
     uiVisible(visible, success, error) {
         exec(success, error, "tv.megacubo.player", "ui", [visible]);
     }
